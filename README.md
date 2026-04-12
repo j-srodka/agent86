@@ -47,6 +47,8 @@ pnpm --filter ts-adapter test
 pnpm --filter conformance test
 ```
 
+Always run **`pnpm -r build`** before **`pnpm --filter conformance test`** when **`packages/ts-adapter/`** has changed (conformance exercises the adapter’s built **`dist`**).
+
 **A/B harness** (clones a pinned OSS repo under `.cache/ab-target/`; see [`packages/ab-harness/README.md`](packages/ab-harness/README.md)):
 
 ```bash
