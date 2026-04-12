@@ -16,6 +16,10 @@ importers:
         version: 5.9.3
 
   packages/ab-harness:
+    dependencies:
+      ts-adapter:
+        specifier: workspace:*
+        version: link:../ts-adapter
     devDependencies:
       typescript:
         specifier: ^5.7.3

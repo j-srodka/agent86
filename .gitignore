@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 vendor/
 .cache/repos/
 .cache/ab-target/
+
+# A/B harness local metrics output
+ab-metrics.json

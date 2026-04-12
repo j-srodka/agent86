@@ -52,13 +52,15 @@ Also call **`assertGrammarDigestPinned()`** from parser construction paths as to
 
 ## `replace_unit` caller sharp edge (`export`)
 
-If **`new_text`** includes a leading **`export`** while the logical unit span starts at **`function`** (common for `export function …`), the splice can yield **`export export function`** and a **`parse_error`**. v0 does **not** validate `new_text` shape beyond parse — **callers** must supply text consistent with the unit byte range (see op JSON notes below). A regression test documents the failure mode in **`packages/ts-adapter/src/apply.test.ts`**.
+If **`new_text`** includes a leading **`export`** while the logical unit span starts at **`function`** (common for `export function …`), the splice can yield **`export export function`** and a **`parse_error`**. v0 does **not** validate `new_text` shape beyond parse — **callers** must supply text consistent with the unit byte range (see op JSON notes below). Regression coverage: **`packages/ts-adapter/src/apply.test.ts`** (`replace_unit: leading export in new_text duplicates export and fails parse`), and **`packages/conformance/src/golden.test.ts`** (Tier I edit-shift golden: correct `new_text` without duplicating `export` for the middle stacked unit).
 
 ## Pinned OSS monorepo for A/B harness (Task 9)
 
-Before writing **`ab-harness/.pinned-rev`**, inspect the candidate repo’s **lockfile / dependencies** for **tree-sitter** (or **web-tree-sitter**) versions that **transitively conflict** with this adapter’s **`tree-sitter@0.21.1`** (e.g. a different major that would force duplicate native builds or resolution surprises). Prefer a pin where the harness install story is compatible or document the conflict and mitigation.
+**Pinned repository (v0):** **`https://github.com/colinhacks/zod`** at commit **`c7805073fef5b6b8857307c3d4b3597a70613bc2`** (see **`packages/ab-harness/.pinned-rev`**). **Rationale:** mid-sized TypeScript monorepo; at this pin the dependency graph does **not** pull a conflicting **tree-sitter** major alongside the adapter’s **`tree-sitter@0.21.1`**, keeping the harness + adapter install story predictable.
 
-When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **link** the **scoped rename / homonym** story to the passing adapter test **`packages/ts-adapter/src/apply.test.ts`** (`rename_symbol` keeps string literals intact while renaming identifiers) so the A/B narrative stays traceable to code.
+Before changing the pin, re-check the candidate revision’s **lockfile** for **tree-sitter** / **web-tree-sitter** versions that could force duplicate native builds or resolution surprises; document any intentional conflict and mitigation.
+
+When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **link** the **scoped rename / homonym** story to the adapter test **`packages/ts-adapter/src/apply.test.ts`** (`rename_symbol` keeps string literals intact while renaming identifiers) so the A/B narrative stays traceable to code.
 
 ## Read path — `WorkspaceSummary` vs `AdapterFingerprint` (v0)
 

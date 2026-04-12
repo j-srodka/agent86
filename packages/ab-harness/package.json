@@ -8,6 +8,9 @@
     "test": "echo \"ab-harness: tests optional in Task 9\"",
     "start": "node dist/index.js"
   },
+  "dependencies": {
+    "ts-adapter": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.7.3"
   }

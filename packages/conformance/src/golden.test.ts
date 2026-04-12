@@ -81,6 +81,9 @@ describe("Task 8 — conformance goldens", () => {
     const root = await copyFixtureToTemp("edit_shift.ts");
     const fileName = "edit_shift.ts";
     try {
+      // "Above" is strict by byte span: a unit counts as unchanged only if its entire
+      // `[start_byte, end_byte)` lies strictly before the edited span (`u.end_byte <= edited.start_byte`).
+      // The middle function starts at the edit boundary; it is the target, so its id must change — not "above".
       const snapA = await materializeSnapshot({ rootPath: root });
       const unitsA = snapA.units
         .filter((u) => u.file_path === fileName)
