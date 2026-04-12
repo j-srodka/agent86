@@ -24,6 +24,8 @@ describe("materializeSnapshot (Task 3)", () => {
     expect(a.id_resolve[a.units[0]!.id]).toBe(a.units[0]!.id);
     expect(a.snapshot_id).toBe(b.snapshot_id);
     expect(a.files).toHaveLength(1);
+    expect(a.files[0]?.provenance).toEqual({ kind: "authored" });
+    expect(a.units[0]?.provenance).toEqual({ kind: "authored" });
     expect(a.skipped_tsx_paths).toEqual([]);
   });
 

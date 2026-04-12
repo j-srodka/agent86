@@ -4,8 +4,11 @@ import { join } from "node:path";
 import { BlobNotFoundError, fetchBlobText } from "./blobs.js";
 import { assertGrammarDigestPinned, GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
 import { resolveLogicalUnit } from "./id_resolve.js";
+import { readAgentIrManifest } from "./manifest.js";
 import { applyReplaceUnit } from "./ops/replace_unit.js";
 import { applyRenameSymbol } from "./ops/rename_symbol.js";
+import { getGeneratedAllowlistPolicy } from "./policies.js";
+import { fileMatchesGeneratedEditAllowlist } from "./provenance.js";
 import { buildFailureReport, buildSuccessReport } from "./report.js";
 import {
   canonicalizeSourceForSnapshot,
@@ -21,6 +24,7 @@ import type {
   ValidationReport,
   V0Op,
   WorkspaceSnapshot,
+  WorkspaceSummary,
 } from "./types.js";
 
 export interface ApplyBatchInput {
@@ -28,6 +32,25 @@ export interface ApplyBatchInput {
   snapshot: WorkspaceSnapshot;
   ops: V0Op[];
   toolchainFingerprintAtApply: string;
+  /**
+   * When provided, `policies.generated_allowlist_insufficient_assertions` is used for §11 allowlist
+   * gates. When omitted, the fail-safe `"error"` effective policy applies (section 6.1).
+   */
+  workspaceSummary?: WorkspaceSummary;
+}
+
+function opHasGeneratorWorkflowAssertion(op: V0Op): boolean {
+  if ("generator_will_not_run" in op && op.generator_will_not_run === true) {
+    return true;
+  }
+  if (
+    "generator_inputs_patched" in op &&
+    Array.isArray(op.generator_inputs_patched) &&
+    op.generator_inputs_patched.length > 0
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function entry(
@@ -63,7 +86,7 @@ function applyingAdapterFingerprint(): AdapterFingerprint {
  * restore original file bytes from before the batch.
  */
 export async function applyBatch(input: ApplyBatchInput): Promise<ValidationReport> {
-  const { snapshot, ops, snapshotRootPath, toolchainFingerprintAtApply } = input;
+  const { snapshot, ops, snapshotRootPath, toolchainFingerprintAtApply, workspaceSummary } = input;
   const adapter = snapshot.adapter;
 
   const omittedOnInput = (): OmittedBlob[] => omittedBlobsFromExternalizedUnits(snapshot);
@@ -138,6 +161,83 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         ),
       ],
       omitted_due_to_size: omittedOnInput(),
+    });
+  }
+
+  const manifest = await readAgentIrManifest(snapshotRootPath);
+  const allowlistPolicy = getGeneratedAllowlistPolicy(workspaceSummary?.policies ?? {});
+  const allowlistAuditWarnings: ValidationEntry[] = [];
+
+  for (let opIndex = 0; opIndex < ops.length; opIndex++) {
+    const op = ops[opIndex]!;
+    const unit = resolveLogicalUnit(snapshot, op.target_id);
+    if (!unit || unit.provenance.kind !== "generated") {
+      continue;
+    }
+    const onAllowlist = fileMatchesGeneratedEditAllowlist(unit.file_path, manifest);
+    const asserted = opHasGeneratorWorkflowAssertion(op);
+    if (!onAllowlist) {
+      const detectedBy = unit.provenance.detected_by;
+      return buildFailureReport({
+        snapshot_id: snapshot.snapshot_id,
+        adapter,
+        toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
+        entries: [
+          entry(
+            "illegal_target_generated",
+            `[gate:illegal_target_generated] op targets a generated unit (detected_by: ${detectedBy}); patch the generator inputs instead`,
+            opIndex,
+            op.target_id,
+          ),
+        ],
+        omitted_due_to_size: omittedOnInput(),
+      });
+    }
+    if (!asserted) {
+      if (allowlistPolicy === "error") {
+        return buildFailureReport({
+          snapshot_id: snapshot.snapshot_id,
+          adapter,
+          toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
+          entries: [
+            {
+              code: "allowlist_without_generator_awareness",
+              severity: "error",
+              message:
+                "Op targets an allowlisted generated unit without generator_will_not_run or non-empty generator_inputs_patched.",
+              op_index: opIndex,
+              target_id: op.target_id,
+              check_scope: "file",
+              confidence: "canonical",
+              evidence: null,
+            },
+          ],
+          omitted_due_to_size: omittedOnInput(),
+        });
+      }
+      allowlistAuditWarnings.push({
+        code: "allowlist_without_generator_awareness",
+        severity: "warning",
+        message:
+          "Op targets an allowlisted generated unit without generator_will_not_run or generator_inputs_patched; proceeding under policies.generated_allowlist_insufficient_assertions=warning.",
+        op_index: opIndex,
+        target_id: op.target_id,
+        check_scope: "file",
+        confidence: "canonical",
+        evidence: null,
+      });
+      continue;
+    }
+    allowlistAuditWarnings.push({
+      code: "allowlist_without_generator_awareness",
+      severity: "warning",
+      message:
+        "[gate:allowlist_without_generator_awareness] allowlisted edit to generated unit with workflow assertion recorded (audit).",
+      op_index: opIndex,
+      target_id: op.target_id,
+      check_scope: "file",
+      confidence: "canonical",
+      evidence: null,
     });
   }
 
@@ -303,7 +403,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
 
     const omittedFinal = mergeOmitted(omittedBlobsFromExternalizedUnits(current), fetchUnavailableOmitted);
 
-    const successEntries: ValidationEntry[] = [];
+    const successEntries: ValidationEntry[] = [...allowlistAuditWarnings];
     if (omittedFinal.some((o) => o.reason === "inline_threshold")) {
       successEntries.push({
         code: "inline_threshold_exceeded",

@@ -17,6 +17,7 @@ describe("buildWorkspaceSummary (Task 4)", () => {
     expect(summary.snapshot_id).toBe(snap.snapshot_id);
     expect(summary.grammar_digest).toBe(snap.grammar_digest);
     expect(summary.max_batch_ops).toBe(snap.adapter.max_batch_ops);
+    expect(summary.generated_file_count).toBe(0);
     expect(summary.manifest_url).toBeNull();
     expect(summary.policies.generated_allowlist_insufficient_assertions).toBe("error");
     expect(summary.blob_cache_path).toBe(getBlobCachePath(resolve(dir)));
@@ -42,6 +43,7 @@ describe("buildWorkspaceSummary (Task 4)", () => {
       snapshot_id: "s",
       grammar_digest: "g",
       max_batch_ops: 50,
+      generated_file_count: 0,
       manifest_url: null,
       policies: {},
       blob_cache_path: "/x/.cache/blobs",

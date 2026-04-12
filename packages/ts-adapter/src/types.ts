@@ -101,11 +101,21 @@ export interface WorkspaceSummaryPolicies {
   generated_allowlist_insufficient_assertions?: "error" | "warning";
 }
 
+/**
+ * File/unit provenance (section 11). Always set on materialized snapshots — never omitted.
+ * `authored` is explicit; `generated` requires `detected_by` (which rule matched).
+ */
+export type Provenance =
+  | { kind: "authored" }
+  | { kind: "generated"; detected_by: string };
+
 export interface WorkspaceSummary {
   snapshot_id: string;
   /** Same value as the snapshot header / `AdapterFingerprint.grammar_digest`. */
   grammar_digest: string;
   max_batch_ops: number;
+  /** Count of tracked files with `provenance.kind === "generated"` in this snapshot. */
+  generated_file_count: number;
   /** Absolute `file:` URL when `agent-ir.manifest.json` exists at snapshot root; else `null`. */
   manifest_url: string | null;
   policies: WorkspaceSummaryPolicies;
@@ -126,6 +136,7 @@ export interface SnapshotFile {
   /** SHA-256 (hex) of canonical LF file bytes. */
   sha256: string;
   byte_length: number;
+  provenance: Provenance;
 }
 
 /** Tree-sitter extraction only; `materializeSnapshot` attaches `source_text` / `blob_*`. */
@@ -148,6 +159,8 @@ export interface LogicalUnit {
   start_byte: number;
   end_byte: number;
   kind: "function_declaration" | "method_definition";
+  /** Inherited from the containing file’s `SnapshotFile.provenance`. */
+  provenance: Provenance;
   /** Present when the unit span is inlined (UTF-8); null when externalized. */
   source_text: string | null;
   /** `sha256:<hex>` when externalized; null when inlined. */
@@ -176,17 +189,23 @@ export type V0CoreApplyFailureCode =
   | "illegal_target_generated"
   | "allowlist_without_generator_awareness";
 
+/** Optional §11 workflow assertions for ops targeting allowlisted generated units. */
+export type GeneratorWorkflowAssertion = {
+  generator_will_not_run?: true;
+  generator_inputs_patched?: string[];
+};
+
 /** v0 op batch JSON shapes (subset; full schema deferred). */
 export type ReplaceUnitOp = {
   op: "replace_unit";
   target_id: string;
   new_text: string;
-};
+} & GeneratorWorkflowAssertion;
 
 export type RenameSymbolOp = {
   op: "rename_symbol";
   target_id: string;
   new_name: string;
-};
+} & GeneratorWorkflowAssertion;
 
 export type V0Op = ReplaceUnitOp | RenameSymbolOp;

@@ -15,10 +15,12 @@ export async function buildWorkspaceSummary(
 ): Promise<WorkspaceSummary> {
   const manifest_url = await resolveManifestUrl(snapshotRootPath);
   const rootResolved = resolve(snapshotRootPath);
+  const generated_file_count = snapshot.files.filter((f) => f.provenance.kind === "generated").length;
   return {
     snapshot_id: snapshot.snapshot_id,
     grammar_digest: snapshot.grammar_digest,
     max_batch_ops: snapshot.adapter.max_batch_ops,
+    generated_file_count,
     manifest_url,
     policies: {
       generated_allowlist_insufficient_assertions: "error",

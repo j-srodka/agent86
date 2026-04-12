@@ -175,7 +175,7 @@ v0 **canonicalization is LF line-ending normalization only** before hash and par
 
 ### Generated files and provenance (spec section 11)
 
-**Provenance** metadata on files/units, **`illegal_target_generated`**, and **`allowlist_without_generator_awareness`** have types and table entries but **no behavioral implementation** in v0 — no file is classified as generated, so those gates do not fire. v1 needs a **provenance heuristic** and/or **manifest** annotations.
+**v1:** Implemented per **Generated file provenance (v1)** (this file): pattern-based **`provenance`** on **`SnapshotFile`** / **`LogicalUnit`**, **`illegal_target_generated`**, manifest **`generated_edit_allowlist`** + op assertions, and **`allowlist_without_generator_awareness`** per §6.1. **v0** did not classify files or emit those gates.
 
 ### `id_resolve` supersession (spec section 8)
 
@@ -183,9 +183,9 @@ The **flattened forward map** is satisfied **trivially** in v0 (identity only; n
 
 ### Rejection codes: in spec section 12.1 table, **never emitted** by the reference adapter (v0 list)
 
-The following normative codes appear in the locked table for completeness; the **v0** adapter did not emit them on any path (stubs / future use). **As of v1**, this list is unchanged **except** that **`snapshot_content_mismatch` is handled separately below** — it is **not** one of these “never emitted” codes.
+The following normative codes appear in the locked table for completeness; the **v0** adapter did not emit them on any path (stubs / future use). **As of v1 provenance**, **`illegal_target_generated`** and **`allowlist_without_generator_awareness`** are removed from this list — the reference adapter emits them when §11 conditions apply. **`snapshot_content_mismatch`** is still handled separately below — it is **not** one of these “never emitted” codes.
 
-`format_drift` · `reanchored_span` · `illegal_target_generated` · `allowlist_without_generator_awareness` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
+`format_drift` · `reanchored_span` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
 
 Codes **not** in this list may still be **rare** in v0 (e.g. only on specific apply failures). **`lang.*`** subcodes are modeled in types; **v0 emits none**.
 
@@ -196,7 +196,7 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | Priority | Area | Gap | Spec (section) |
 | -------- | ---- | --- | -------------- |
 | High | Blob externalization | **Done (v1):** `.cache/blobs/`, `inline_threshold_bytes` on `materializeSnapshot`, `omitted_due_to_size`, `blob_unavailable` on cache miss | 10 |
-| High | Generated provenance | Provenance fields; `illegal_target_generated` / allowlist gates never fire | 11 |
+| High | Generated provenance | **Done (v1):** pattern **`provenance`**, `illegal_target_generated`, manifest allowlist + assertions, `WorkspaceSummary.generated_file_count` | 11 |
 | High | `move_unit` / `relocate_unit` | Not implemented; `id_resolve` forward map untested for non-identity | 4.3, 8 |
 | Medium | Formatter pinning | LF-only; no Prettier profile; `format_drift` never emitted | 7 |
 | Medium | Ghost-bytes report fields | `export_surface_delta`, `coverage_hint`, etc. never emitted | 5.1 |

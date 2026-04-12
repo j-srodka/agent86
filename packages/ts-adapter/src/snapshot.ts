@@ -5,12 +5,14 @@ import { join, relative, resolve, sep } from "node:path";
 import { getBlobCachePath } from "./blobs.js";
 import { GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
 import { parseTypeScriptSource } from "./parser.js";
+import { detectProvenance, firstNLines } from "./provenance.js";
 import { extractLogicalUnits } from "./units.js";
 import type {
   AdapterFingerprint,
   ExtractedUnitSpan,
   LogicalUnit,
   OmittedBlob,
+  Provenance,
   SnapshotFile,
   WorkspaceSnapshot,
 } from "./types.js";
@@ -129,10 +131,13 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     const raw = await readFile(abs, "utf8");
     const canonical = canonicalizeSourceForSnapshot(raw);
     const fileSha = sha256HexOfCanonicalSource(canonical);
+    const headerLines = firstNLines(canonical, 5);
+    const provenance = detectProvenance(rel, headerLines);
     files.push({
       path: rel,
       sha256: fileSha,
       byte_length: Buffer.byteLength(canonical, "utf8"),
+      provenance,
     });
     const tree = parseTypeScriptSource(canonical);
     const spans = extractLogicalUnits(tree, {
@@ -142,7 +147,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     });
     for (const span of spans) {
       const unitText = canonical.slice(span.start_byte, span.end_byte);
-      units.push(await finalizeLogicalUnit(span, unitText, snapshotRootResolved, inlineThreshold));
+      units.push(await finalizeLogicalUnit(span, unitText, snapshotRootResolved, inlineThreshold, provenance));
     }
   }
 
@@ -175,6 +180,7 @@ async function finalizeLogicalUnit(
   unitUtf8: string,
   snapshotRootResolved: string,
   inlineThresholdBytes: number,
+  provenance: Provenance,
 ): Promise<LogicalUnit> {
   const byteLen = Buffer.byteLength(unitUtf8, "utf8");
   if (byteLen > inlineThresholdBytes) {
@@ -185,6 +191,7 @@ async function finalizeLogicalUnit(
     await writeFile(join(cacheDir, digestHex), unitUtf8, "utf8");
     return {
       ...span,
+      provenance,
       source_text: null,
       blob_ref,
       blob_bytes: byteLen,
@@ -192,6 +199,7 @@ async function finalizeLogicalUnit(
   }
   return {
     ...span,
+    provenance,
     source_text: unitUtf8,
     blob_ref: null,
     blob_bytes: null,

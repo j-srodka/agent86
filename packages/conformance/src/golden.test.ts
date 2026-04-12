@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,15 @@ function fixturePath(name: string): string {
 async function copyFixtureToTemp(fixtureName: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "agent86-conf-"));
   await copyFile(fixturePath(fixtureName), join(dir, fixtureName));
+  return dir;
+}
+
+/** Copy a fixture preserving relative path under `fixtures/` (e.g. `__generated__/x.ts`). */
+async function copyRelFixtureToTemp(relUnderFixtures: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "agent86-conf-"));
+  const dest = join(dir, relUnderFixtures);
+  await mkdir(dirname(dest), { recursive: true });
+  await copyFile(fixturePath(relUnderFixtures), dest);
   return dir;
 }
 
@@ -182,6 +191,153 @@ describe("v1 — blob externalization (section 10)", () => {
       const u2 = snapB.units[0]!;
       expect(u2.blob_ref).toBeTruthy();
       expect(u2.source_text).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v1 — generated provenance (section 11)", () => {
+  it("materialize: @generated header fixture is classified generated", async () => {
+    const root = await copyFixtureToTemp("generated_header.ts");
+    try {
+      const s = await materializeSnapshot({ rootPath: root });
+      expect(s.files).toHaveLength(1);
+      expect(s.files[0]!.provenance).toEqual({
+        kind: "generated",
+        detected_by: "header:@generated",
+      });
+      expect(s.units[0]!.provenance).toEqual(s.files[0]!.provenance);
+      const summary = await buildWorkspaceSummary(s, root);
+      expect(summary.generated_file_count).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("materialize: __generated__ path segment fixture is classified generated", async () => {
+    const root = await copyRelFixtureToTemp("__generated__/generated_path.ts");
+    try {
+      const s = await materializeSnapshot({ rootPath: root });
+      expect(s.files[0]!.provenance.kind).toBe("generated");
+      expect(s.files[0]!.provenance).toMatchObject({
+        kind: "generated",
+        detected_by: "path:segment:__generated__",
+      });
+      expect(s.units[0]!.provenance).toEqual(s.files[0]!.provenance);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("materialize: normal fixture is authored", async () => {
+    const root = await copyFixtureToTemp("template_literals.ts");
+    try {
+      const s = await materializeSnapshot({ rootPath: root });
+      for (const f of s.files) {
+        expect(f.provenance).toEqual({ kind: "authored" });
+      }
+      for (const u of s.units) {
+        expect(u.provenance).toEqual({ kind: "authored" });
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applyBatch on generated unit without allowlist → illegal_target_generated; no file mutation", async () => {
+    const root = await copyFixtureToTemp("generated_header.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const u = snap.units[0]!;
+      const before = await readFile(join(root, "generated_header.ts"), "utf8");
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: u.id,
+            new_text: `function generatedHeader(): number {\n  return 0;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("failure");
+      expect(report.entries[0]?.code).toBe("illegal_target_generated");
+      const after = await readFile(join(root, "generated_header.ts"), "utf8");
+      expect(after).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applyBatch with allowlist + generator_will_not_run → warning audit; batch succeeds", async () => {
+    const root = await copyRelFixtureToTemp("__generated__/generated_path.ts");
+    try {
+      await writeFile(
+        join(root, "agent-ir.manifest.json"),
+        JSON.stringify({
+          generated_edit_allowlist: ["__generated__/generated_path.ts"],
+        }),
+        "utf8",
+      );
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root);
+      const u = snap.units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        workspaceSummary: summary,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: u.id,
+            new_text: `function generatedPath(): string {\n  return "patched";\n}\n`,
+            generator_will_not_run: true,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const audits = report.entries.filter((e) => e.code === "allowlist_without_generator_awareness");
+      expect(audits).toHaveLength(1);
+      expect(audits[0]!.severity).toBe("warning");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applyBatch allowlisted generated without assertion → error; batch rejected", async () => {
+    const root = await copyRelFixtureToTemp("__generated__/generated_path.ts");
+    try {
+      await writeFile(
+        join(root, "agent-ir.manifest.json"),
+        JSON.stringify({
+          generated_edit_allowlist: ["__generated__/generated_path.ts"],
+        }),
+        "utf8",
+      );
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root);
+      const u = snap.units[0]!;
+      const before = await readFile(join(root, "__generated__", "generated_path.ts"), "utf8");
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        workspaceSummary: summary,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: u.id,
+            new_text: `function generatedPath(): string {\n  return "nope";\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("failure");
+      expect(report.entries[0]?.code).toBe("allowlist_without_generator_awareness");
+      expect(await readFile(join(root, "__generated__", "generated_path.ts"), "utf8")).toBe(before);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

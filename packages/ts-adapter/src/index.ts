@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./provenance.js";
 export * from "./blobs.js";
 export * from "./report.js";
 export * from "./policies.js";
