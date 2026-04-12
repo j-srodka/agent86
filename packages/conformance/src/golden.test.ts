@@ -1,15 +1,16 @@
 import { describe, it } from "vitest";
 
 /**
- * Task 8 will add determinism, template/decorator, and edit-shift tests here.
+ * Implementation plan: `docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md`
  *
- * Edit-shift (plan Step 4): MUST materialize snapshot A, apply a real `replace_unit`
- * to the lower stacked unit, materialize snapshot B, then assert Tier I ids per
- * `packages/ts-adapter/src/units.ts`. A second identical materialize of the same
- * sources is not a substitute — see `docs/impl/v0-decisions.md` (Conformance goldens).
+ * The `it.todo` below is the **checklist hook for Task 8 Step 4** (edit-shift id golden).
+ * It must be replaced with a real test before Task 8 sign-off — see `docs/impl/v0-decisions.md`
+ * (Conformance goldens — Sign-off gate).
  */
-describe("conformance goldens (Task 8)", () => {
-  it.todo(
-    "edit-shift: real replace_unit on lower unit then re-snapshot; ids above stable, at/below change",
-  );
+describe("Task 8 — conformance goldens", () => {
+  describe("Step 4 — Edit-shift id golden (implementation plan checklist; blocking until implemented)", () => {
+    it.todo(
+      "[Task 8 Step 4] Fixture with ≥2 units in one file (stacked vertically). Snapshot A → record ids. Apply replace_unit to the lower unit only → snapshot B. Assert: edited unit id changed; unit above edit same id; unit below edit (if any) id changed — per packages/ts-adapter/src/units.ts. Do not substitute a second identical materialize of unchanged sources.",
+    );
+  });
 });

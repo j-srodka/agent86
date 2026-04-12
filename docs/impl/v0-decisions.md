@@ -43,13 +43,21 @@ The apply entry point MUST call **`assertGrammarDigestPinned()`** at the **start
 
 Before writing **`ab-harness/.pinned-rev`**, inspect the candidate repo’s **lockfile / dependencies** for **tree-sitter** (or **web-tree-sitter**) versions that **transitively conflict** with this adapter’s **`tree-sitter@0.21.1`** (e.g. a different major that would force duplicate native builds or resolution surprises). Prefer a pin where the harness install story is compatible or document the conflict and mitigation.
 
+## Read path — `WorkspaceSummary` vs `AdapterFingerprint` (v0)
+
+**`max_batch_ops` duplication:** On `WorkspaceSummary`, **`max_batch_ops`** repeats the same value as **`AdapterFingerprint.max_batch_ops`** on the snapshot/report. That duplication is **intentional for v0** so agents read the batch limit on the cheap read path (spec section 6) without unpacking the full fingerprint. If **`AdapterFingerprint`** grows with more capability fields that also belong on the read path, **prefer** exposing the **full `AdapterFingerprint` struct** on `WorkspaceSummary` (or a shared `adapter_capabilities` object) instead of duplicating additional fields one-by-one.
+
 ## Conformance goldens (Task 8)
 
 **Edit-shift id golden (plan Step 4):** MUST **apply a real edit** (e.g. **`replace_unit`** on the lower stacked unit in a multi-unit file), then **re-materialize** the snapshot. Assert: edited unit’s id **changes**; unit **above** the edit **unchanged**; unit **below** (if any) **changed** — per `units.ts` header. **Do not** substitute a **second identical materialization** of the same unchanged sources as the edit-shift test; that only proves determinism, not Tier I id semantics after mutation.
 
+**Sign-off gate (Step 4):** Task 8 is **not** complete until the Vitest **`it.todo`** for **implementation-plan Task 8 Step 4** (`packages/conformance/src/golden.test.ts`, edit-shift describe block) is **replaced by a real test** that performs **`replace_unit`** then re-snapshot. A remaining **`todo`** in that block **blocks** Task 8 sign-off (CI should treat conformance todos as incomplete work for Task 8).
+
 ## Manifest discovery (spec section 16)
 
-*TBD (Task 10).*
+*TBD (Task 10) — wire resolution, default paths, etc.*
+
+**`manifest_url` format (normative when Task 10 lands):** Whatever string is placed in **`WorkspaceSummary.manifest_url`** MUST be **usable to fetch or open the manifest without additional implicit repo-root context** — e.g. an absolute **`file:`** URL, a fully qualified HTTPS URL, or another locator an agent can resolve **standalone**. Do not emit a bare relative path that only makes sense combined with an undocumented CWD or “assume repo root” rule unless that combination is also specified in the same summary or a linked normative field.
 
 ## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`)
 
