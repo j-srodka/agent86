@@ -35,13 +35,30 @@ Snapshot materialization hashes file contents **after normalizing line endings t
 
 Opaque unit **`id`** (v0): SHA-256 (hex) over a stable UTF-8 string: grammar digest, resolved snapshot root, POSIX relative file path, `startIndex`, `endIndex` (Tree-sitter byte offsets in **canonical LF** source), and node kind (`function_declaration` | `method_definition`). Initial **`id_resolve`** is the identity map on unit ids.
 
-## Apply path — grammar digest gate (Task 7)
+## Apply path — §9 gates (Task 7)
 
-The apply entry point MUST call **`assertGrammarDigestPinned()`** at the **start of each apply attempt** (in addition to any parser initialization). Do not rely solely on “first parser load already checked” — re-check so digest drift or replaced installs fail closed at apply time.
+On each **`applyBatch`** attempt, in order **before** reading files or expanding ops:
+
+1. **`assertGrammarDigestPinned()`** — on-disk grammar artifact matches **`GRAMMAR_DIGEST_V0`**; else **`grammar_mismatch`**.
+2. **`snapshot.grammar_digest === GRAMMAR_DIGEST_V0`** — snapshot header matches applying grammar; else **`grammar_mismatch`**.
+3. **`snapshot.adapter`** must match the applying adapter fingerprint (**`V0_ADAPTER_FINGERPRINT`** in `snapshot.ts`); else **`adapter_version_unsupported`**.
+4. **`ops.length <= snapshot.adapter.max_batch_ops`**; else **`batch_size_exceeded`** (no mutation, no backup).
+
+Also call **`assertGrammarDigestPinned()`** from parser construction paths as today; do not rely on a prior call alone.
+
+## Apply batch atomicity (v0)
+
+**Process-lifetime only:** `applyBatch` backs up canonical file text in memory, restores on failure, and is **best-effort atomic** for the **current Node process**. There is **no** crash-safe journal, WAL, or post-crash recovery in v0 — a kill mid-batch can leave the workspace partially mutated.
+
+## `replace_unit` caller sharp edge (`export`)
+
+If **`new_text`** includes a leading **`export`** while the logical unit span starts at **`function`** (common for `export function …`), the splice can yield **`export export function`** and a **`parse_error`**. v0 does **not** validate `new_text` shape beyond parse — **callers** must supply text consistent with the unit byte range (see op JSON notes below). A regression test documents the failure mode in **`packages/ts-adapter/src/apply.test.ts`**.
 
 ## Pinned OSS monorepo for A/B harness (Task 9)
 
 Before writing **`ab-harness/.pinned-rev`**, inspect the candidate repo’s **lockfile / dependencies** for **tree-sitter** (or **web-tree-sitter**) versions that **transitively conflict** with this adapter’s **`tree-sitter@0.21.1`** (e.g. a different major that would force duplicate native builds or resolution surprises). Prefer a pin where the harness install story is compatible or document the conflict and mitigation.
+
+When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **link** the **scoped rename / homonym** story to the passing adapter test **`packages/ts-adapter/src/apply.test.ts`** (`rename_symbol` keeps string literals intact while renaming identifiers) so the A/B narrative stays traceable to code.
 
 ## Read path — `WorkspaceSummary` vs `AdapterFingerprint` (v0)
 

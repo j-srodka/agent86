@@ -85,5 +85,86 @@ describe("applyBatch", () => {
     });
     expect(report.outcome).toBe("failure");
     expect(report.entries[0]?.code).toBe("op_vocabulary_unsupported");
+    expect(report.entries[0]?.message).toContain("not supported in v0");
+  });
+
+  it("Task 7: grammar_mismatch when snapshot grammar_digest does not match applying adapter", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await writeFile(join(dir, "x.ts"), `export function f(): void {}\n`, "utf8");
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const tampered = { ...snap, grammar_digest: "0".repeat(64) };
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: tampered,
+      ops: [],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("grammar_mismatch");
+    expect(report.entries[0]?.message).toContain("grammar_digest");
+  });
+
+  it("Task 7: batch_size_exceeded before touching files", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await writeFile(join(dir, "x.ts"), `export function f(): void {}\n`, "utf8");
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const ops = Array.from({ length: 51 }, () => ({
+      op: "replace_unit" as const,
+      target_id: snap.units[0]!.id,
+      new_text: "function f(): void {}\n",
+    }));
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      ops,
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("batch_size_exceeded");
+  });
+
+  it("Task 7: adapter_version_unsupported when AdapterFingerprint drifts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await writeFile(join(dir, "x.ts"), `export function f(): void {}\n`, "utf8");
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const tampered = {
+      ...snap,
+      adapter: { ...snap.adapter, name: "foreign-adapter" },
+    };
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: tampered,
+      ops: [],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("adapter_version_unsupported");
+  });
+
+  it("replace_unit: leading export in new_text duplicates export and fails parse (caller responsibility)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await writeFile(
+      join(dir, "f.ts"),
+      `export function keep(): number {\n  return 0;\n}\n\nexport function victim(): number {\n  return 1;\n}\n`,
+      "utf8",
+    );
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const victim = snap.units
+      .filter((u) => u.file_path === "f.ts")
+      .sort((a, b) => a.start_byte - b.start_byte)[1]!;
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      ops: [
+        {
+          op: "replace_unit",
+          target_id: victim.id,
+          new_text: "export function victim(): number {\n  return 99;\n}\n",
+        },
+      ],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("parse_error");
   });
 });

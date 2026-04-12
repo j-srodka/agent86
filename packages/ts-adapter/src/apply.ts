@@ -1,13 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { assertGrammarDigestPinned } from "./grammar_meta.js";
+import { assertGrammarDigestPinned, GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
 import { resolveLogicalUnit } from "./id_resolve.js";
 import { applyReplaceUnit } from "./ops/replace_unit.js";
 import { applyRenameSymbol } from "./ops/rename_symbol.js";
-import { canonicalizeSourceForSnapshot } from "./snapshot.js";
+import { canonicalizeSourceForSnapshot, V0_ADAPTER_FINGERPRINT } from "./snapshot.js";
 import { buildFailureReport, buildSuccessReport } from "./report.js";
-import type { ValidationEntry, ValidationReport, V0Op, WorkspaceSnapshot } from "./types.js";
+import type { AdapterFingerprint, ValidationEntry, ValidationReport, V0Op, WorkspaceSnapshot } from "./types.js";
 
 export interface ApplyBatchInput {
   snapshotRootPath: string;
@@ -34,8 +34,12 @@ function entry(
   };
 }
 
+function applyingAdapterFingerprint(): AdapterFingerprint {
+  return { ...V0_ADAPTER_FINGERPRINT };
+}
+
 /**
- * Atomic v0 apply: validate digest gate, then run ops sequentially; on any failure,
+ * Atomic v0 apply: validate §9 gates, then run ops sequentially; on any failure,
  * restore original file bytes from before the batch.
  */
 export async function applyBatch(input: ApplyBatchInput): Promise<ValidationReport> {
@@ -49,14 +53,63 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       snapshot_id: snapshot.snapshot_id,
       adapter,
       toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
+      entries: [entry("grammar_mismatch", String(e), null, null)],
+    });
+  }
+
+  if (snapshot.grammar_digest !== GRAMMAR_DIGEST_V0) {
+    return buildFailureReport({
+      snapshot_id: snapshot.snapshot_id,
+      adapter,
+      toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
       entries: [
-        entry("grammar_mismatch", String(e), null, null),
+        entry(
+          "grammar_mismatch",
+          "snapshot.grammar_digest does not match applying adapter grammar_digest",
+          null,
+          null,
+        ),
       ],
     });
   }
 
-  // Task 7: add grammar_mismatch (snapshot vs adapter runtime digest compare), batch_size_exceeded,
-  // adapter name / semver fingerprint checks here — same entry point, before op expansion.
+  const expected = V0_ADAPTER_FINGERPRINT;
+  if (
+    snapshot.adapter.name !== expected.name ||
+    snapshot.adapter.semver !== expected.semver ||
+    snapshot.adapter.grammar_digest !== expected.grammar_digest ||
+    snapshot.adapter.max_batch_ops !== expected.max_batch_ops
+  ) {
+    return buildFailureReport({
+      snapshot_id: snapshot.snapshot_id,
+      adapter,
+      toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
+      entries: [
+        entry(
+          "adapter_version_unsupported",
+          "AdapterFingerprint on snapshot does not match applying ts-adapter build (v0); use a snapshot from this adapter or upgrade.",
+          null,
+          null,
+        ),
+      ],
+    });
+  }
+
+  if (ops.length > snapshot.adapter.max_batch_ops) {
+    return buildFailureReport({
+      snapshot_id: snapshot.snapshot_id,
+      adapter,
+      toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
+      entries: [
+        entry(
+          "batch_size_exceeded",
+          `op batch length ${ops.length} exceeds max_batch_ops ${snapshot.adapter.max_batch_ops}`,
+          null,
+          null,
+        ),
+      ],
+    });
+  }
 
   const backup = new Map<string, string>();
   for (const f of snapshot.files) {
@@ -129,11 +182,15 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           const code = r.message.includes("v0 supports function_declaration only")
             ? "op_vocabulary_unsupported"
             : "parse_error";
+          const msg =
+            code === "op_vocabulary_unsupported"
+              ? "rename_symbol on this unit kind is not supported in v0 (function_declaration only)"
+              : r.message;
           return buildFailureReport({
             snapshot_id: snapshot.snapshot_id,
             adapter,
             toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
-            entries: [entry(code, r.message, opIndex, op.target_id)],
+            entries: [entry(code, msg, opIndex, op.target_id)],
           });
         }
         current = r.nextSnapshot;
@@ -146,14 +203,16 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         snapshot_id: snapshot.snapshot_id,
         adapter,
         toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
-        entries: [entry("op_vocabulary_unsupported", "unknown op shape", opIndex, null)],
+        entries: [
+          entry("op_vocabulary_unsupported", "batch op type is not supported in v0", opIndex, null),
+        ],
       });
     }
 
     return buildSuccessReport({
       snapshot_id: snapshot.snapshot_id,
       next_snapshot_id: current.snapshot_id,
-      adapter,
+      adapter: applyingAdapterFingerprint(),
       toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
       id_resolve_delta: mergedDelta,
       entries: [

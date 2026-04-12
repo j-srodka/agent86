@@ -7,7 +7,8 @@ import { parseTypeScriptSource } from "./parser.js";
 import { extractLogicalUnits } from "./units.js";
 import type { AdapterFingerprint, LogicalUnit, SnapshotFile, WorkspaceSnapshot } from "./types.js";
 
-const ADAPTER_V0: AdapterFingerprint = {
+/** Applying adapter identity for materialized snapshots; apply gate compares incoming snapshots to this. */
+export const V0_ADAPTER_FINGERPRINT: AdapterFingerprint = {
   name: "ts-adapter",
   semver: "0.0.0",
   grammar_digest: GRAMMAR_DIGEST_V0,
@@ -131,7 +132,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
 
   const snapshot_id = computeSnapshotId({
     grammar_digest: grammarDigest,
-    adapter: ADAPTER_V0,
+    adapter: V0_ADAPTER_FINGERPRINT,
     files,
     units,
     skipped_tsx_paths: tsxRel,
@@ -140,7 +141,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
   return {
     snapshot_id,
     grammar_digest: grammarDigest,
-    adapter: ADAPTER_V0,
+    adapter: V0_ADAPTER_FINGERPRINT,
     files,
     units,
     id_resolve,
