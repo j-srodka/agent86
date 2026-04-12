@@ -109,6 +109,33 @@ export interface WorkspaceSummary {
   policies: WorkspaceSummaryPolicies;
 }
 
+export interface SnapshotFile {
+  path: string;
+  /** SHA-256 (hex) of canonical LF file bytes. */
+  sha256: string;
+  byte_length: number;
+}
+
+export interface LogicalUnit {
+  id: string;
+  file_path: string;
+  start_byte: number;
+  end_byte: number;
+  kind: "function_declaration" | "method_definition";
+}
+
+export interface WorkspaceSnapshot {
+  snapshot_id: string;
+  grammar_digest: string;
+  adapter: AdapterFingerprint;
+  files: SnapshotFile[];
+  units: LogicalUnit[];
+  /** Flattened map; v0 materialization starts as identity on unit ids. */
+  id_resolve: Record<string, string>;
+  /** `.tsx` paths discovered but not parsed (v0 TS grammar only); sorted. */
+  skipped_tsx_paths: string[];
+}
+
 /** Subset referenced directly by the v0 apply path and plan gates. */
 export type V0CoreApplyFailureCode =
   | "parse_error"
