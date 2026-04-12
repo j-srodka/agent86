@@ -7,7 +7,9 @@ alwaysApply: true
 
 # agent86 — Cursor rules
 Token efficiency — rtk:
-  - rtk is installed and configured for Cursor (preToolUse hook active)
+  - rtk is installed for Cursor: `~/.cursor/hooks.json` uses **preToolUse** (matcher `Shell`) to rewrite agent shell commands; `beforeShellExecution` cannot replace commands in Cursor (allow/deny only).
+  - Integrated terminal: `~/.cursor/rtk-terminal-auto.zsh` is sourced from `~/.zshrc` and aliases common tools when `TERM_PROGRAM=vscode` (use `/bin/ls`, `command git`, etc. to bypass).
+  - `RTK_HOOK_AUDIT=1` is set for integrated terminals via Cursor **User** `settings.json` (`terminal.integrated.env.osx`); audit log: `~/.local/share/rtk/hook-audit.log`.
   - Prefer rtk-wrapped commands for all terminal output that feeds back into context:
       git status / diff / log / add / commit / push  →  rtk git ...
       cat / head / tail <file>                        →  rtk read <file>
