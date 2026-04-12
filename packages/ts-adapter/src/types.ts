@@ -50,7 +50,9 @@ export type SpecNormativeCode =
   | "coverage_miss"
   | "partial_apply_not_permitted"
   | "op_vocabulary_unsupported"
-  | "batch_size_exceeded";
+  | "batch_size_exceeded"
+  /** Op target was resolved via `id_resolve` (superseded id); resolution is never silent (section 8). */
+  | "id_superseded";
 
 /** Language-specific subcodes (section 12.2). Unknown `lang.*` severity must be honored as declared. */
 export type LangSubcode = `lang.${string}`;
@@ -210,4 +212,18 @@ export type RenameSymbolOp = {
   new_name: string;
 } & GeneratorWorkflowAssertion;
 
-export type V0Op = ReplaceUnitOp | RenameSymbolOp;
+/** Cross-file move only; same-file reorder is rejected (`lang.ts.move_unit_same_file`). */
+export type MoveUnitOp = {
+  op: "move_unit";
+  target_id: string;
+  /** Repo-relative POSIX path (`.ts`). */
+  destination_file: string;
+  /** If omitted, append to end of destination file. */
+  insert_after_id?: string;
+} & GeneratorWorkflowAssertion;
+
+/** Batch op union (v0 + v1); name kept for package stability. */
+export type V0Op = ReplaceUnitOp | RenameSymbolOp | MoveUnitOp;
+
+/** Readable alias — same type as `V0Op`. */
+export type Op = V0Op;

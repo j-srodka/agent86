@@ -10,8 +10,8 @@ export interface RenameSymbolInput {
   snapshotRootPath: string;
   unit: LogicalUnit;
   newName: string;
-  /** Forwarded to `materializeSnapshot` after the edit (§10 threshold). */
-  materialize?: Pick<MaterializeSnapshotOptions, "inline_threshold_bytes">;
+  /** Forwarded to `materializeSnapshot` after the edit (§10 threshold + `id_resolve` merge). */
+  materialize?: Pick<MaterializeSnapshotOptions, "inline_threshold_bytes" | "previousSnapshot">;
 }
 
 export interface RenameSymbolOk {
@@ -106,7 +106,8 @@ export async function applyRenameSymbol(input: RenameSymbolInput): Promise<Renam
   await writeFile(abs, next, "utf8");
   const nextSnapshot = await materializeSnapshot({
     rootPath: snapshotRootPath,
-    ...input.materialize,
+    inline_threshold_bytes: input.materialize?.inline_threshold_bytes,
+    previousSnapshot: input.materialize?.previousSnapshot,
   });
 
   return {

@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import type Parser from "tree-sitter";
 
+import { parseTypeScriptSource } from "./parser.js";
 import type { ExtractedUnitSpan } from "./types.js";
 
 const UNIT_NODE_TYPES = ["function_declaration", "method_definition"] as const;
@@ -85,4 +86,29 @@ export function extractLogicalUnits(
       kind,
     } satisfies ExtractedUnitSpan;
   });
+}
+
+function firstFunctionLikeName(node: Parser.SyntaxNode): string | null {
+  if (node.type === "function_declaration" || node.type === "method_definition") {
+    const n = node.childForFieldName("name");
+    if (n) {
+      return n.text;
+    }
+  }
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const c = node.namedChild(i);
+    if (c) {
+      const s = firstFunctionLikeName(c);
+      if (s) {
+        return s;
+      }
+    }
+  }
+  return null;
+}
+
+/** Declared identifier of the first function-like unit in a canonical unit span string. */
+export function declaredNameFromUnitSource(source: string): string | null {
+  const tree = parseTypeScriptSource(source);
+  return firstFunctionLikeName(tree.rootNode);
 }

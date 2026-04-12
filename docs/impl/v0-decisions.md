@@ -215,10 +215,11 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 
 **`buildWorkspaceSummary`:** The function is **`async`**. All current in-repo call sites **`await`** it (unit tests only as of Task 11); integrators must not call it synchronously.
 
-## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`)
+## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`; v1: `move_unit`)
 
 - **`replace_unit`:** `{ "op": "replace_unit", "target_id": string, "new_text": string }` — replaces the **entire** logical unit span `[start_byte, end_byte)` (canonical LF source) with `new_text`, then re-parses and re-snapshots. For `export function …`, the Tree-sitter **`function_declaration`** range usually starts at the `function` keyword (the `export ` prefix sits outside that node); **`new_text`** must splice valid source for that span (often `function name() { … }` without duplicating `export`).
 - **`rename_symbol`:** `{ "op": "rename_symbol", "target_id": string, "new_name": string }` — v0 **function_declaration only**, **same file**; walks the declaration subtree and renames `identifier` nodes matching the declared name (name-independent unit **ids**; **`id_resolve_delta`** empty on success).
+- **`move_unit` (v1):** `{ "op": "move_unit", "target_id": string, "destination_file": string, "insert_after_id"?: string }` — cross-file move of the unit’s canonical span; optional §11 workflow fields allowed. See **move_unit (v1)** above.
 
 ## `rename_symbol` scope (v0)
 

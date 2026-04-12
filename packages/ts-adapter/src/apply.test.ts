@@ -266,4 +266,29 @@ describe("applyBatch", () => {
     expect(report.entries[0]?.code).toBe("snapshot_content_mismatch");
     expect(report.entries[0]?.message).toContain("[gate:snapshot_content_mismatch]");
   });
+
+  it("v1: move_unit to new file updates id_resolve_delta and relocates source bytes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-move-"));
+    await writeFile(
+      join(dir, "a.ts"),
+      `export function mv(): number {\n  return 1;\n}\n`,
+      "utf8",
+    );
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const u = snap.units[0]!;
+    const oldId = u.id;
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      ops: [{ op: "move_unit", target_id: u.id, destination_file: "b/x.ts" }],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("success");
+    const newId = report.id_resolve_delta[oldId];
+    expect(newId).toBeDefined();
+    expect(newId).not.toBe(oldId);
+    const relocated = await readFile(join(dir, "b", "x.ts"), "utf8");
+    expect(relocated).toContain("function mv");
+    expect(await readFile(join(dir, "a.ts"), "utf8")).not.toContain("function mv");
+  });
 });

@@ -6,6 +6,7 @@ import { getBlobCachePath } from "./blobs.js";
 import { GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
 import { parseTypeScriptSource } from "./parser.js";
 import { detectProvenance, firstNLines } from "./provenance.js";
+import { mergeIdResolveFromPrevious } from "./id_resolve.js";
 import { extractLogicalUnits } from "./units.js";
 import type {
   AdapterFingerprint,
@@ -104,6 +105,11 @@ export interface MaterializeSnapshotOptions {
    * for a single materialization (§10).
    */
   inline_threshold_bytes?: number;
+  /**
+   * When set, merges `id_resolve` supersession from the prior snapshot after scanning disk
+   * (preserves forward edges and ghost chains when units disappear — see `docs/impl/v0-decisions.md`).
+   */
+  previousSnapshot?: WorkspaceSnapshot;
 }
 
 /**
@@ -115,6 +121,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
   const snapshotRootResolved = resolve(options.rootPath);
   const inlineThreshold = options.inline_threshold_bytes ?? DEFAULT_INLINE_THRESHOLD_BYTES;
   const grammarDigest = GRAMMAR_DIGEST_V0;
+  const previousSnapshot = options.previousSnapshot;
 
   const tsRel: string[] = [];
   const tsxRel: string[] = [];
@@ -151,10 +158,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     }
   }
 
-  const id_resolve: Record<string, string> = {};
-  for (const u of units) {
-    id_resolve[u.id] = u.id;
-  }
+  const id_resolve = mergeIdResolveFromPrevious(units, previousSnapshot?.id_resolve);
 
   const snapshot_id = computeSnapshotId({
     grammar_digest: grammarDigest,

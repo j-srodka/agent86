@@ -9,8 +9,8 @@ export interface ReplaceUnitInput {
   snapshotRootPath: string;
   unit: LogicalUnit;
   newText: string;
-  /** Forwarded to `materializeSnapshot` after the edit (§10 threshold). */
-  materialize?: Pick<MaterializeSnapshotOptions, "inline_threshold_bytes">;
+  /** Forwarded to `materializeSnapshot` after the edit (§10 threshold + `id_resolve` merge). */
+  materialize?: Pick<MaterializeSnapshotOptions, "inline_threshold_bytes" | "previousSnapshot">;
 }
 
 export interface ReplaceUnitOk {
@@ -49,7 +49,8 @@ export async function applyReplaceUnit(input: ReplaceUnitInput): Promise<Replace
   await writeFile(abs, nextSource, "utf8");
   const nextSnapshot = await materializeSnapshot({
     rootPath: snapshotRootPath,
-    ...input.materialize,
+    inline_threshold_bytes: input.materialize?.inline_threshold_bytes,
+    previousSnapshot: input.materialize?.previousSnapshot,
   });
   return { ok: true, nextSnapshot };
 }

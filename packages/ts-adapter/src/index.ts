@@ -13,3 +13,4 @@ export * from "./id_resolve.js";
 export * from "./apply.js";
 export * from "./ops/replace_unit.js";
 export * from "./ops/rename_symbol.js";
+export * from "./ops/move_unit.js";

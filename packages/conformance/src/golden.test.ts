@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { applyBatch, buildWorkspaceSummary, fetchBlobText, materializeSnapshot } from "ts-adapter";
+import {
+  applyBatch,
+  applyMoveIdResolveEdge,
+  buildWorkspaceSummary,
+  fetchBlobText,
+  materializeSnapshot,
+} from "ts-adapter";
+import type { ValidationReport, WorkspaceSnapshot } from "ts-adapter";
 
 /**
  * Conformance goldens (implementation plan Task 8).
@@ -35,6 +42,25 @@ async function copyRelFixtureToTemp(relUnderFixtures: string): Promise<string> {
   await mkdir(dirname(dest), { recursive: true });
   await copyFile(fixturePath(relUnderFixtures), dest);
   return dir;
+}
+
+/** Rebuild workspace snapshot + `id_resolve` after a successful apply (matches on-disk state + batch deltas). */
+async function snapshotAfterSuccessfulBatch(
+  rootPath: string,
+  snapshotBefore: WorkspaceSnapshot,
+  report: ValidationReport,
+): Promise<WorkspaceSnapshot> {
+  if (report.outcome !== "success") {
+    throw new Error("snapshotAfterSuccessfulBatch: report must be success");
+  }
+  const reloaded = await materializeSnapshot({ rootPath, previousSnapshot: snapshotBefore });
+  let { id_resolve } = reloaded;
+  const keys = Object.keys(report.id_resolve_delta).sort((a, b) => a.localeCompare(b));
+  for (const o of keys) {
+    const n = report.id_resolve_delta[o]!;
+    id_resolve = applyMoveIdResolveEdge(id_resolve, o, n);
+  }
+  return { ...reloaded, id_resolve };
 }
 
 describe("Task 8 — conformance goldens", () => {
@@ -382,6 +408,169 @@ describe("v1 — generated provenance (section 11)", () => {
       expect(report.outcome).toBe("failure");
       expect(report.entries[0]?.code).toBe("allowlist_without_generator_awareness");
       expect(await readFile(join(root, "__generated__", "generated_path.ts"), "utf8")).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v1 — move_unit (sections 4.3, 8)", () => {
+  it("cross-file move to new file: id_resolve_delta, destination contains unit, source emptied", async () => {
+    const root = await copyFixtureToTemp("move_export.ts");
+    try {
+      const snap0 = await materializeSnapshot({ rootPath: root });
+      const u = snap0.units[0]!;
+      const oldId = u.id;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap0,
+        ops: [{ op: "move_unit", target_id: u.id, destination_file: "out/moved_here.ts" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const newId = report.id_resolve_delta[oldId];
+      expect(newId).toBeDefined();
+      expect(newId).not.toBe(oldId);
+      const snap1 = await snapshotAfterSuccessfulBatch(root, snap0, report);
+      expect(snap1.id_resolve[oldId]).toBe(newId);
+      const destUnit = snap1.units.find((x) => x.id === newId);
+      expect(destUnit?.file_path).toBe("out/moved_here.ts");
+      const destText = await readFile(join(root, "out", "moved_here.ts"), "utf8");
+      expect(destText).toContain("movedOnce");
+      const srcText = await readFile(join(root, "move_export.ts"), "utf8");
+      expect(srcText).not.toContain("movedOnce");
+      expect(snap1.units.filter((x) => x.file_path === "move_export.ts")).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("auto-resolve: replace_unit targeting pre-move id succeeds with id_superseded warning", async () => {
+    const root = await copyFixtureToTemp("move_export.ts");
+    try {
+      const snap0 = await materializeSnapshot({ rootPath: root });
+      const u = snap0.units[0]!;
+      const oldId = u.id;
+      const r0 = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap0,
+        ops: [{ op: "move_unit", target_id: u.id, destination_file: "relocated.ts" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(r0.outcome).toBe("success");
+      const snap1 = await snapshotAfterSuccessfulBatch(root, snap0, r0);
+      const r1 = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap1,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: oldId,
+            new_text: `function movedOnce(): number {\n  return 99;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(r1.outcome).toBe("success");
+      const warn = r1.entries.filter((e) => e.code === "id_superseded");
+      expect(warn.length).toBeGreaterThanOrEqual(1);
+      expect(warn[0]!.evidence).toEqual({ resolved_to: r0.id_resolve_delta[oldId] });
+      const text = await readFile(join(root, "relocated.ts"), "utf8");
+      expect(text).toContain("99");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("ghost_unit: moved unit deleted on disk then re-snapshot; op targeting old id hard-fails", async () => {
+    const root = await copyFixtureToTemp("move_export.ts");
+    try {
+      const snap0 = await materializeSnapshot({ rootPath: root });
+      const u = snap0.units[0]!;
+      const oldId = u.id;
+      const r0 = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap0,
+        ops: [{ op: "move_unit", target_id: u.id, destination_file: "gone.ts" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(r0.outcome).toBe("success");
+      const snapMoved = await snapshotAfterSuccessfulBatch(root, snap0, r0);
+      await rm(join(root, "gone.ts"));
+      const snapGhost = await materializeSnapshot({ rootPath: root, previousSnapshot: snapMoved });
+      const r1 = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snapGhost,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: oldId,
+            new_text: `function movedOnce(): number {\n  return 0;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(r1.outcome).toBe("failure");
+      expect(r1.entries[0]?.code).toBe("ghost_unit");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lang.ts.move_unit_name_conflict: no mutation when destination has same declared name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent86-move-conf-"));
+    try {
+      await copyFile(fixturePath("move_export.ts"), join(root, "src.ts"));
+      await mkdir(join(root, "nested"), { recursive: true });
+      await copyFile(fixturePath("move_name_conflict_dest.ts"), join(root, "nested", "dest.ts"));
+      const snap0 = await materializeSnapshot({ rootPath: root });
+      const u = snap0.units.find((x) => x.file_path === "src.ts");
+      expect(u).toBeDefined();
+      const beforeSrc = await readFile(join(root, "src.ts"), "utf8");
+      const beforeDest = await readFile(join(root, "nested", "dest.ts"), "utf8");
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap0,
+        ops: [{ op: "move_unit", target_id: u!.id, destination_file: "nested/dest.ts" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("failure");
+      expect(report.entries[0]?.code).toBe("lang.ts.move_unit_name_conflict");
+      expect(await readFile(join(root, "src.ts"), "utf8")).toBe(beforeSrc);
+      expect(await readFile(join(root, "nested", "dest.ts"), "utf8")).toBe(beforeDest);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("flattened chain: move A→B then B→C yields id_resolve old_A → final id", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent86-chain-"));
+    try {
+      await copyFile(fixturePath("move_chain_src.ts"), join(root, "chain_a.ts"));
+      const snap0 = await materializeSnapshot({ rootPath: root });
+      const ua = snap0.units.find((x) => x.file_path === "chain_a.ts");
+      expect(ua).toBeDefined();
+      const oldA = ua!.id;
+      const r1 = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap0,
+        ops: [{ op: "move_unit", target_id: oldA, destination_file: "chain_b.ts" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(r1.outcome).toBe("success");
+      const idB = r1.id_resolve_delta[oldA]!;
+      const snap1 = await snapshotAfterSuccessfulBatch(root, snap0, r1);
+      const r2 = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap1,
+        ops: [{ op: "move_unit", target_id: idB, destination_file: "chain_c/final.ts" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(r2.outcome).toBe("success");
+      const idC = r2.id_resolve_delta[idB]!;
+      const snap2 = await snapshotAfterSuccessfulBatch(root, snap1, r2);
+      expect(snap2.id_resolve[oldA]).toBe(idC);
+      expect(snap2.units.some((u) => u.id === idC && u.file_path === "chain_c/final.ts")).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
