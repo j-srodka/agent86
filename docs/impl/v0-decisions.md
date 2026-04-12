@@ -95,7 +95,74 @@ Snapshot materialization hashes file contents **after normalizing line endings t
 
 Opaque unit **`id`** (v0): SHA-256 (hex) over a stable UTF-8 string: grammar digest, resolved snapshot root, POSIX relative file path, `startIndex`, `endIndex` (Tree-sitter byte offsets in **canonical LF** source), and node kind (`function_declaration` | `method_definition`). Initial **`id_resolve`** is the identity map on unit ids.
 
-**`move_unit` / `relocate_unit` (spec section 4.3):** The locked spec describes these as first-class ops with **`id_resolve_delta`** forward edges. **v0 does not implement them** (deferred to v1+ per implementation plan). **`id_resolve`** is always the **identity** map at materialization. For the two implemented ops (**`replace_unit`**, **`rename_symbol`**), **`id_resolve_delta`** on success is always **empty** (`{}`) — no non-identity remaps.
+**`relocate_unit` (spec section 4.3):** Not implemented as a separate op in v1 — behavior is covered by **`move_unit`**; treating **`relocate_unit`** as an alias is a **v2** documentation/compat candidate.
+
+For **`replace_unit`** and **`rename_symbol`**, **`id_resolve_delta`** remains **empty** on success unless a batch also contains **`move_unit`** (which emits non-identity deltas).
+
+## move_unit (v1)
+
+**Date (normative for this repo):** 2026-04-12
+
+**Spec:** Tier I auditable state transition (sections 4.3, 8, 12.1). **`move_unit`** is not a silent Tier II identity change; **`id_resolve_delta`** on **`ValidationReport`** is the batch audit trail, and the snapshot header’s **`id_resolve`** carries the flattened forward map.
+
+### Scope — cross-file only
+
+**In scope:** Move a logical unit’s **source bytes** from one **tracked** `.ts` file to another **repo-relative POSIX path** (may be a new file).
+
+**Out of scope (v1) — same-file “reorder”:** Reordering units within a single file does **not** change module path or Tier I addressing in a way **`move_unit`** is meant to model; it has **no** semantic cross-file address change. Callers should use **`replace_unit`** on the file (or other edits) if reordering is required. Reject same source/destination path with **`lang.ts.move_unit_same_file`**.
+
+**Out of scope (v1) — import / export reference rewriting:** **`move_unit`** only moves the unit’s text into the destination file. It does **not** rewrite **`import` / `export`** statements in **other** files that may still reference the old location. Updating those references is the **agent’s** responsibility. This must remain true in **`apply.ts`** (comments) so future work does not “helpfully” add cross-file refactors without an explicit spec and op vocabulary.
+
+**Out of scope — `relocate_unit` as a distinct op:** Same as **`move_unit`** for v1; a separate opcode is deferred (alias candidate for v2).
+
+**Out of scope — Tier II:** Cross-session / cross-branch durable identity is unchanged (spec section 4.2).
+
+### Wire shape
+
+- **`MoveUnitOp`:** `{ "op": "move_unit", "target_id": string, "destination_file": string, "insert_after_id"?: string }` plus optional §11 workflow fields (**`generator_will_not_run`**, **`generator_inputs_patched`**) consistent with other unit-targeting ops.
+- **`destination_file`:** Repo-relative **POSIX** path (forward slashes).
+- **`insert_after_id`:** Optional; if omitted, the unit is **appended** to the end of the destination file. If present, it must resolve (via **`id_resolve`**) to a **live** unit in **`destination_file`**; insertion is after that unit’s span.
+
+**Type export name:** The union of batch ops remains exported as **`V0Op`** for backward compatibility; **`MoveUnitOp`** is added. An alias **`export type Op = V0Op`** may be exported for readability — same underlying type.
+
+### `id_resolve` forward map (flattened)
+
+- **Snapshot header (`WorkspaceSnapshot.id_resolve`):** **`old_id → new_id`** edges are **transitively closed** (single hop to the **current** live id for a moved logical line of identity). If **`A`** was previously mapped to **`B`**, and **`B`** is later moved to **`C`**, the flattened map stores **`A → C`** (not **`A → B`** with a second hop).
+- **Per-batch audit (`ValidationReport.id_resolve_delta`):** Only the **edges produced by this batch** (e.g. **`old_id → new_id`** for the move just applied), not the full history. The snapshot header holds the full flattened map after apply.
+
+**Merge / rematerialize:** When **`materializeSnapshot`** is called with optional **`previousSnapshot`** (see snapshot implementation), **`id_resolve`** entries whose keys are not current live unit ids are **merged** so that superseded ids still forward — including **ghost** edges where the resolved id is **not** live after disk changes — so **`applyBatch`** can emit **`ghost_unit`** per spec section 8.
+
+### Auto-resolve with warning (Option C)
+
+When an op’s **`target_id`** is **not** a live unit id but **`snapshot.id_resolve[target_id]`** is defined:
+
+1. The adapter resolves **`target_id → resolved_id`** using the **flattened** map (single lookup on the snapshot).
+2. The op runs against **`resolved_id`**’s live unit (same as if the agent had sent **`resolved_id`**).
+3. The **`ValidationReport`** includes a **`id_superseded`** **warning** entry (section 12.1–style code **`id_superseded`**, **`severity: warning`**, **`target_id`** = the **original** id, **`evidence.resolved_to`** = **`resolved_id`**) so resolution is **never silent**.
+
+### `ghost_unit` vs `unknown_or_superseded_id`
+
+- **`unknown_or_superseded_id`:** **`target_id`** is **not** a live unit id and has **no** entry in **`id_resolve`** (fully unknown / obsolete handle not known to this snapshot).
+- **`ghost_unit`:** **`target_id`** **is** in **`id_resolve`**, but **`id_resolve[target_id]`** does **not** refer to a **live** unit in **`snapshot.units`** (moved then deleted, or snapshot/disk severely stale). Hard reject; **no** mutation.
+
+### Destination file behavior
+
+1. **Destination path not in snapshot but file exists on disk:** **`snapshot_content_mismatch`** (or equivalent stale manifest) — re-materialize before apply.
+2. **Destination does not exist:** Create the file containing the moved unit’s canonical source text (LF); then re-materialize.
+3. **Destination exists (tracked):** Insert the unit after **`insert_after_id`** or append; then re-materialize **source and destination** (and any other changed paths).
+4. **Name conflict:** If the destination file already contains a **logical unit** with the same **declared** function/method name as the moved unit, reject with **`lang.ts.move_unit_name_conflict`** before any write.
+5. **Source file after removal:** If the source file has **no** remaining logical units, the adapter **keeps** the file (may be empty). **v1 does not delete** source files.
+
+### Atomicity
+
+**`move_unit`** touches **two** files. **`applyBatch`** extends the same **process-lifetime** backup/restore model as v0: both paths are backed up before mutation (including a destination path that exists but was not previously tracked — read from disk at backup time), and both are restored on failure. No crash-safe WAL.
+
+### `lang.*` extensions (this feature)
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| **`lang.ts.move_unit_name_conflict`** | error | Destination file already has a unit with the same declared name. |
+| **`lang.ts.move_unit_same_file`** | error | `destination_file` equals the source file (same-file reorder / no-op move out of scope). |
 
 ## Apply path — §9 gates (Task 7)
 
@@ -181,7 +248,7 @@ v0 **canonicalization is LF line-ending normalization only** before hash and par
 
 ### `id_resolve` supersession (spec section 8)
 
-The **flattened forward map** is satisfied **trivially** in v0 (identity only; no moves). Codes **`ghost_unit`** and **`unknown_or_superseded_id`** are wired where **`resolveCanonicalUnitId`** applies; **explicit tests for non-identity supersession chains** require **`move_unit`** (v1). When **`move_unit`** lands, add **ghost detection** and **forward-edge** tests.
+The **flattened forward map** is satisfied **trivially** in v0 (identity only; no moves). **v1** implements **`move_unit`** (see **move_unit (v1)** below): non-identity **`id_resolve`**, **`id_resolve_delta`** on success, **`id_superseded`** warnings on auto-resolve, **`ghost_unit`** / **`unknown_or_superseded_id`** on invalid targets, and conformance goldens for chains and ghosts.
 
 ### Rejection codes: in spec section 12.1 table, **never emitted** by the reference adapter (v0 list)
 
@@ -199,7 +266,7 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | -------- | ---- | --- | -------------- |
 | High | Blob externalization | **Done (v1):** `.cache/blobs/`, `inline_threshold_bytes` on `materializeSnapshot`, `omitted_due_to_size`, `blob_unavailable` on cache miss | 10 |
 | High | Generated provenance | **Done (v1):** pattern **`provenance`**, `illegal_target_generated`, manifest allowlist + assertions, `WorkspaceSummary.generated_file_count` | 11 |
-| High | `move_unit` / `relocate_unit` | Not implemented; `id_resolve` forward map untested for non-identity | 4.3, 8 |
+| High | `move_unit` / `relocate_unit` | **Done (v1):** cross-file `move_unit` per **move_unit (v1)** below; `relocate_unit` still not a separate op (alias candidate for v2) | 4.3, 8 |
 | Medium | Formatter pinning | LF-only; no Prettier profile; `format_drift` never emitted | 7 |
 | Medium | Ghost-bytes report fields | `export_surface_delta`, `coverage_hint`, etc. never emitted | 5.1 |
 | Medium | `rename_symbol` scope | Same-file `function_declaration` only; no methods, no cross-file | Ops |
