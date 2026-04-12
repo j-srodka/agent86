@@ -140,3 +140,8 @@ vite.config.ts.timestamp-*
 
 # Mac OS
 .DS_Store
+
+# Agent IR v0: cloned OSS / vendor artifacts
+vendor/
+.cache/repos/
+.cache/ab-target/
