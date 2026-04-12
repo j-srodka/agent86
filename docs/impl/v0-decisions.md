@@ -35,6 +35,8 @@ Snapshot materialization hashes file contents **after normalizing line endings t
 
 Opaque unit **`id`** (v0): SHA-256 (hex) over a stable UTF-8 string: grammar digest, resolved snapshot root, POSIX relative file path, `startIndex`, `endIndex` (Tree-sitter byte offsets in **canonical LF** source), and node kind (`function_declaration` | `method_definition`). Initial **`id_resolve`** is the identity map on unit ids.
 
+**`move_unit` / `relocate_unit` (spec section 4.3):** The locked spec describes these as first-class ops with **`id_resolve_delta`** forward edges. **v0 does not implement them** (deferred to v1+ per implementation plan). **`id_resolve`** is always the **identity** map at materialization. For the two implemented ops (**`replace_unit`**, **`rename_symbol`**), **`id_resolve_delta`** on success is always **empty** (`{}`) — no non-identity remaps.
+
 ## Apply path — §9 gates (Task 7)
 
 On each **`applyBatch`** attempt, in order **before** reading files or expanding ops:
@@ -92,3 +94,52 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 ## `rename_symbol` scope (v0)
 
 **Same-file, `function_declaration` only** (no `method_definition`, no cross-file). Identifiers matching the old name **inside** that declaration subtree are rewritten (declaration name, calls, nested identifiers with that spelling). **`id_resolve`** does not encode symbol names — renames do **not** emit `id_resolve_delta` entries in v0.
+
+---
+
+## v0 vs locked spec — deferred behavior and v1 gaps
+
+Closing alignment pass (reference stack complete). The v0 adapter meets the **core contract** (Tier I identity, normative codes on implemented paths, apply-time gates, harness). The locked spec is **wider** than v0 on purpose: table entries and optional report fields exist so v1 can grow without a spec rewrite. This section records **what v0 deliberately does not do** and a **prioritized gap table** for v1 implementers.
+
+### Optional `ValidationReport` extensions (spec section 5.1, pass-2 / ghost-bytes)
+
+Fields such as **`export_surface_delta`**, **`coverage_hint`**, **`declaration_peers_unpatched`**, **`rename_surface_report`** are **optional** in the spec (“implementations MAY include them”). The v0 adapter **never emits** them — correct for v0. A v1 TypeScript adapter with project-aware checking (e.g. **tsc** scope) should plan to emit at least **`export_surface_delta`** and **`coverage_hint`** where applicable.
+
+### Formatter drift (spec section 7)
+
+v0 **canonicalization is LF line-ending normalization only** before hash and parse. There is **no pinned formatter** (e.g. Prettier profile). The normative code **`format_drift`** exists in the section 12.1 table but is **never emitted** by v0.
+
+### Blob / inline threshold (spec section 10)
+
+**`inline_threshold_bytes`** (normative, e.g. 8192 in spec) is **not enforced** for externalization in v0: logical payloads stay **inlined**; there are no **`sha256:`** blob refs in v0 outputs; **`omitted_due_to_size`** is always **empty**. Largest practical gap for very large files / harness scale — **v1 priority**.
+
+### Generated files and provenance (spec section 11)
+
+**Provenance** metadata on files/units, **`illegal_target_generated`**, and **`allowlist_without_generator_awareness`** have types and table entries but **no behavioral implementation** in v0 — no file is classified as generated, so those gates do not fire. v1 needs a **provenance heuristic** and/or **manifest** annotations.
+
+### `id_resolve` supersession (spec section 8)
+
+The **flattened forward map** is satisfied **trivially** in v0 (identity only; no moves). Codes **`ghost_unit`** and **`unknown_or_superseded_id`** are wired where **`resolveCanonicalUnitId`** applies; **explicit tests for non-identity supersession chains** require **`move_unit`** (v1). When **`move_unit`** lands, add **ghost detection** and **forward-edge** tests.
+
+### Rejection codes: in spec section 12.1 table, **never emitted** by the v0 adapter
+
+The following normative codes appear in the locked table for completeness; **v0 does not emit them** on any path (stubs / future use only):
+
+`format_drift` · `reanchored_span` · `illegal_target_generated` · `allowlist_without_generator_awareness` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
+
+Codes **not** in this list may still be **rare** in v0 (e.g. only on specific apply failures). **`lang.*`** subcodes are modeled in types; **v0 emits none**.
+
+### v1 gap table (prioritized)
+
+| Priority | Area | Gap | Spec (section) |
+| -------- | ---- | --- | -------------- |
+| High | Blob externalization | `sha256:` refs, `inline_threshold_bytes`, `omitted_due_to_size` never populated | 10 |
+| High | Generated provenance | Provenance fields; `illegal_target_generated` / allowlist gates never fire | 11 |
+| High | `move_unit` / `relocate_unit` | Not implemented; `id_resolve` forward map untested for non-identity | 4.3, 8 |
+| Medium | Formatter pinning | LF-only; no Prettier profile; `format_drift` never emitted | 7 |
+| Medium | Ghost-bytes report fields | `export_surface_delta`, `coverage_hint`, etc. never emitted | 5.1 |
+| Medium | `rename_symbol` scope | Same-file `function_declaration` only; no methods, no cross-file | Ops |
+| Medium | Manifest strict mode | Lenient `{}` on invalid JSON; no schema validation | 16 |
+| Low | TSX grammar | `skipped_tsx_paths` only; full TSX needs separate grammar constant | 4.1 |
+| Low | Unemitted table codes | See list above | 12.1 |
+| Low | Supersession tests | Ghost chain tests need `move_unit` | 8 |
