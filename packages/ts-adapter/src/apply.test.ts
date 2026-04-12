@@ -101,7 +101,7 @@ describe("applyBatch", () => {
     });
     expect(report.outcome).toBe("failure");
     expect(report.entries[0]?.code).toBe("grammar_mismatch");
-    expect(report.entries[0]?.message).toContain("grammar_digest");
+    expect(report.entries[0]?.message).toContain("[gate:snapshot_grammar_digest]");
   });
 
   it("Task 7: batch_size_exceeded before touching files", async () => {

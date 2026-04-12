@@ -41,7 +41,7 @@ export function assertGrammarDigestPinned(): void {
   const computed = computeGrammarDigestFromArtifact();
   if (computed !== GRAMMAR_DIGEST_V0) {
     throw new Error(
-      `grammar_digest mismatch: expected ${GRAMMAR_DIGEST_V0}, computed ${computed} from ${grammarArtifactPath()}. ` +
+      `[gate:runtime_grammar_artifact] On-disk tree-sitter grammar artifact does not match GRAMMAR_DIGEST_V0: expected ${GRAMMAR_DIGEST_V0}, computed ${computed} from ${grammarArtifactPath()}. ` +
         "Re-hash `typescript/src/parser.c`, update GRAMMAR_DIGEST_V0, and record the bump in docs/impl/v0-decisions.md.",
     );
   }

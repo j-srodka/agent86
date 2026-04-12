@@ -39,9 +39,9 @@ Opaque unit **`id`** (v0): SHA-256 (hex) over a stable UTF-8 string: grammar dig
 
 On each **`applyBatch`** attempt, in order **before** reading files or expanding ops:
 
-1. **`assertGrammarDigestPinned()`** — on-disk grammar artifact matches **`GRAMMAR_DIGEST_V0`**; else **`grammar_mismatch`**.
-2. **`snapshot.grammar_digest === GRAMMAR_DIGEST_V0`** — snapshot header matches applying grammar; else **`grammar_mismatch`**.
-3. **`snapshot.adapter`** must match the applying adapter fingerprint (**`V0_ADAPTER_FINGERPRINT`** in `snapshot.ts`); else **`adapter_version_unsupported`**.
+1. **`assertGrammarDigestPinned()`** — on-disk grammar artifact matches **`GRAMMAR_DIGEST_V0`**; else **`grammar_mismatch`** with message prefix **`[gate:runtime_grammar_artifact]`** (runtime / lockfile install vs checked-in constant).
+2. **`snapshot.grammar_digest === GRAMMAR_DIGEST_V0`** — snapshot header matches applying grammar; else **`grammar_mismatch`** with prefix **`[gate:snapshot_grammar_digest]`** (stale or foreign snapshot vs current adapter). Operators should distinguish these in telemetry.
+3. **`snapshot.adapter`** must match the applying adapter fingerprint (**`V0_ADAPTER_FINGERPRINT`** in `snapshot.ts`); else **`adapter_version_unsupported`**. **`max_batch_ops`** is part of that equality: changing it is a **breaking** adapter version bump for interchange (same as name/semver drift), not an independent knob.
 4. **`ops.length <= snapshot.adapter.max_batch_ops`**; else **`batch_size_exceeded`** (no mutation, no backup).
 
 Also call **`assertGrammarDigestPinned()`** from parser construction paths as today; do not rely on a prior call alone.
@@ -62,13 +62,11 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 
 ## Read path — `WorkspaceSummary` vs `AdapterFingerprint` (v0)
 
-**`max_batch_ops` duplication:** On `WorkspaceSummary`, **`max_batch_ops`** repeats the same value as **`AdapterFingerprint.max_batch_ops`** on the snapshot/report. That duplication is **intentional for v0** so agents read the batch limit on the cheap read path (spec section 6) without unpacking the full fingerprint. If **`AdapterFingerprint`** grows with more capability fields that also belong on the read path, **prefer** exposing the **full `AdapterFingerprint` struct** on `WorkspaceSummary` (or a shared `adapter_capabilities` object) instead of duplicating additional fields one-by-one.
+**`max_batch_ops` duplication:** On `WorkspaceSummary`, **`max_batch_ops`** repeats the same value as **`AdapterFingerprint.max_batch_ops`** on the snapshot/report. That duplication is **intentional for v0** so agents read the batch limit on the cheap read path (spec section 6) without unpacking the full fingerprint. **Changing `max_batch_ops` constitutes a breaking adapter version bump** because apply-time fingerprint equality includes it. If **`AdapterFingerprint`** grows with more capability fields that also belong on the read path, **prefer** exposing the **full `AdapterFingerprint` struct** on `WorkspaceSummary` (or a shared `adapter_capabilities` object) instead of duplicating additional fields one-by-one.
 
 ## Conformance goldens (Task 8)
 
 **Edit-shift id golden (plan Step 4):** MUST **apply a real edit** (e.g. **`replace_unit`** on the lower stacked unit in a multi-unit file), then **re-materialize** the snapshot. Assert: edited unit’s id **changes**; unit **above** the edit **unchanged**; unit **below** (if any) **changed** — per `units.ts` header. **Do not** substitute a **second identical materialization** of the same unchanged sources as the edit-shift test; that only proves determinism, not Tier I id semantics after mutation.
-
-**Sign-off gate (Step 4):** Task 8 is **not** complete until the Vitest **`it.todo`** for **implementation-plan Task 8 Step 4** (`packages/conformance/src/golden.test.ts`, edit-shift describe block) is **replaced by a real test** that performs **`replace_unit`** then re-snapshot. A remaining **`todo`** in that block **blocks** Task 8 sign-off (CI should treat conformance todos as incomplete work for Task 8).
 
 ## Manifest discovery (spec section 16)
 

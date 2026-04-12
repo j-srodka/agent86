@@ -49,11 +49,15 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
   try {
     assertGrammarDigestPinned();
   } catch (e) {
+    const msg = String(e);
+    const withGate = msg.includes("[gate:runtime_grammar_artifact]")
+      ? msg
+      : `[gate:runtime_grammar_artifact] ${msg}`;
     return buildFailureReport({
       snapshot_id: snapshot.snapshot_id,
       adapter,
       toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
-      entries: [entry("grammar_mismatch", String(e), null, null)],
+      entries: [entry("grammar_mismatch", withGate, null, null)],
     });
   }
 
@@ -65,7 +69,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       entries: [
         entry(
           "grammar_mismatch",
-          "snapshot.grammar_digest does not match applying adapter grammar_digest",
+          `[gate:snapshot_grammar_digest] WorkspaceSnapshot.grammar_digest (${snapshot.grammar_digest}) does not match applying adapter (${GRAMMAR_DIGEST_V0}); snapshot may be stale or produced by a different toolchain.`,
           null,
           null,
         ),
