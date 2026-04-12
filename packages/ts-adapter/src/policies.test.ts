@@ -26,6 +26,7 @@ describe("getGeneratedAllowlistPolicy", () => {
   it("uses nested policies from WorkspaceSummary", () => {
     const summary: WorkspaceSummary = {
       snapshot_id: "snap:1",
+      grammar_digest: "digest:stub",
       max_batch_ops: 50,
       manifest_url: null,
       policies: { generated_allowlist_insufficient_assertions: "warning" },
@@ -36,6 +37,7 @@ describe("getGeneratedAllowlistPolicy", () => {
   it("treats absent nested policy as error", () => {
     const summary: WorkspaceSummary = {
       snapshot_id: "snap:1",
+      grammar_digest: "digest:stub",
       max_batch_ops: 50,
       manifest_url: null,
       policies: {},

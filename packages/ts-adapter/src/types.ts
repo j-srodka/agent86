@@ -103,6 +103,8 @@ export interface WorkspaceSummaryPolicies {
 
 export interface WorkspaceSummary {
   snapshot_id: string;
+  /** Same value as the snapshot header / `AdapterFingerprint.grammar_digest`. */
+  grammar_digest: string;
   max_batch_ops: number;
   /** `file:` URL or repo-relative path when known; `null` when absent (Task 10). */
   manifest_url: string | null;
