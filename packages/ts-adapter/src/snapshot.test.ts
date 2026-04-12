@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { materializeSnapshot } from "./snapshot.js";
+import { canonicalizeSourceForSnapshot, materializeSnapshot } from "./snapshot.js";
 
 describe("materializeSnapshot (Task 3)", () => {
   it("materializes two functions as two units with deterministic snapshot_id", async () => {
@@ -36,5 +37,21 @@ describe("materializeSnapshot (Task 3)", () => {
     expect(s.files.map((f) => f.path).sort()).toEqual(["plain.ts"]);
     expect(s.skipped_tsx_paths).toEqual(["ui.tsx"]);
     expect(s.units).toHaveLength(1);
+  });
+
+  it("hashes per-file SHA-256 after CRLF→LF canonicalization (same as LF-only file)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-crlf-"));
+    const crlfSource = `export function a(): void {}\r\nexport function b(): void {}\r\n`;
+    const lfOnly = canonicalizeSourceForSnapshot(crlfSource);
+    expect(lfOnly.includes("\r")).toBe(false);
+    const expectedSha = createHash("sha256").update(lfOnly, "utf8").digest("hex");
+    await writeFile(join(dir, "mix.ts"), crlfSource, "utf8");
+    const s = await materializeSnapshot({ rootPath: dir });
+    expect(s.files[0]?.sha256).toBe(expectedSha);
+    await writeFile(join(dir, "lf.ts"), lfOnly, "utf8");
+    const s2 = await materializeSnapshot({ rootPath: dir });
+    const lfFile = s2.files.find((f) => f.path === "lf.ts");
+    const mixFile = s2.files.find((f) => f.path === "mix.ts");
+    expect(lfFile?.sha256).toBe(mixFile?.sha256);
   });
 });
