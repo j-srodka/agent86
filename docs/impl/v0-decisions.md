@@ -38,9 +38,11 @@ as installed from the **pnpm-lockfile-pinned** npm package `tree-sitter-typescri
 
 **Eviction / GC:** **None in v1.** The cache **grows** with materialization; no automatic deletion. Documented limitation until a later version adds policy.
 
-**Cache miss:** **`fetchBlobText(blobRef, snapshotRootPath)`** throws **`BlobNotFoundError`**. The error **`message`** is machine-oriented and includes the normative prefix **`[blob_unavailable]`** so programmatic filters can key off it without parsing prose. On apply, this maps to **`ValidationReport.entries[]`** with code **`blob_unavailable`** (warning severity when the op can still proceed using on-disk file bytes for splice/parse). **`omitted_due_to_size`** MUST still list externalized refs (reason **`inline_threshold`**); if a fetch fails, the same ref may also appear with reason **`unavailable`** per spec **`OmittedBlob.reason`**.
+**Cache miss:** **`fetchBlobText(blobRef, snapshotRootPath)`** throws **`BlobNotFoundError`**. The **`message`** includes **`[blob_unavailable]`** and states that the blob is **not in local cache** and that the agent should **re-materialize the snapshot to rebuild** blobs. On apply, **`ValidationReport.entries[]`** uses the same wording for **`blob_unavailable`** (warning when the op can still proceed using on-disk file bytes for splice/parse). **`omitted_due_to_size`** MUST still list externalized refs (reason **`inline_threshold`**); if a fetch fails, the same ref may also appear with reason **`unavailable`** per spec **`OmittedBlob.reason`**.
 
-**Read path honesty:** **`WorkspaceSummary.omitted_due_to_size`** lists every **`sha256:`** payload not inlined in **`LogicalUnit`** records ( **`source_text === null`**, **`blob_ref`/`blob_bytes` set**). Absence of a unit’s text in the snapshot object is never treated as “empty”; omissions are explicit.
+**`inline_threshold_exceeded` on success:** If the **post-apply** snapshot still externalizes any unit, **`ValidationReport.outcome === "success"`** remains valid **but agents MUST inspect** **`entries[]`** for **`inline_threshold_exceeded`** and **`omitted_due_to_size`**. Success does **not** imply that all unit payloads were inlined or that nothing was omitted.
+
+**Read path honesty — `WorkspaceSummary.omitted_due_to_size`:** Lists every **`sha256:`** payload not inlined in **`LogicalUnit`** records (`source_text === null`, **`blob_ref`/`blob_bytes` set**). The field is **always present** on the wire as an array, including **`[]`** when nothing was externalized — **never absent** in JSON (so “missing field” is not confused with “nothing omitted”).
 
 **Invariant (LogicalUnit):** **`source_text`** and **`blob_ref`** are never both non-null. Inline mode: **`source_text`** is a string (possibly empty), **`blob_ref`** and **`blob_bytes`** are **`null`**. Externalized mode: **`source_text`** is **`null`**, **`blob_ref`** is a **`sha256:`** string, **`blob_bytes`** is the UTF-8 byte length of that payload.
 
@@ -70,6 +72,8 @@ On each **`applyBatch`** attempt, in order **before** reading files or expanding
 2. **`snapshot.grammar_digest === GRAMMAR_DIGEST_V0`** — snapshot header matches applying grammar; else **`grammar_mismatch`** with prefix **`[gate:snapshot_grammar_digest]`** (stale or foreign snapshot vs current adapter). Operators should distinguish these in telemetry.
 3. **`snapshot.adapter`** must match the applying adapter fingerprint (**`V0_ADAPTER_FINGERPRINT`** in `snapshot.ts`); else **`adapter_version_unsupported`**. **`max_batch_ops`** is part of that equality: changing it is a **breaking** adapter version bump for interchange (same as name/semver drift), not an independent knob.
 4. **`ops.length <= snapshot.adapter.max_batch_ops`**; else **`batch_size_exceeded`** (no mutation, no backup).
+
+5. **On-disk file bytes vs snapshot manifest (v1, pre-splice):** Immediately when **`applyBatch`** reads each tracked **`WorkspaceSnapshot.files[]`** path for its in-memory backup (before any op splice), it canonicalizes to LF and compares **SHA-256** to **`files[].sha256`**. If any path differs → **`snapshot_content_mismatch`** with message prefix **`[gate:snapshot_content_mismatch]`**, **no writes** to tracked files in that batch attempt. **Rationale:** prevents silent Tier I corruption when disk drifted after materialization (hand edits, formatter, VCS partial state, tool races) while **`WorkspaceSnapshot`** still advertises stale hashes — the same class of risk **§7** calls out for identity drift, in a new form once ops expand using snapshot-derived spans.
 
 Also call **`assertGrammarDigestPinned()`** from parser construction paths as today; do not rely on a prior call alone.
 
@@ -153,6 +157,8 @@ The following normative codes appear in the locked table for completeness; **v0 
 `format_drift` · `reanchored_span` · `illegal_target_generated` · `allowlist_without_generator_awareness` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
 
 Codes **not** in this list may still be **rare** in v0 (e.g. only on specific apply failures). **`lang.*`** subcodes are modeled in types; **v0 emits none**.
+
+**v1 addendum:** **`snapshot_content_mismatch`** is **not** in the “never emitted” set — **`applyBatch`** emits it when on-disk bytes (canonical LF SHA-256) disagree with **`WorkspaceSnapshot.files[].sha256`** (see §9 gate 5).
 
 ### v1 gap table (prioritized)
 

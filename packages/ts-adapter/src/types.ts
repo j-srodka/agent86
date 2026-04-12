@@ -114,7 +114,10 @@ export interface WorkspaceSummary {
    * Populated even when empty so agents know where `sha256:` refs resolve.
    */
   blob_cache_path: string;
-  /** Every externalized unit payload (`blob_ref`); never silent omission on the read path. */
+  /**
+   * Every externalized unit payload (`blob_ref`); never silent omission on the read path.
+   * Always present on the wire, including **`[]`** when nothing was externalized — never omit the field.
+   */
   omitted_due_to_size: OmittedBlob[];
 }
 

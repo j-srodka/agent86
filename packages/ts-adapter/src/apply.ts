@@ -7,7 +7,12 @@ import { resolveLogicalUnit } from "./id_resolve.js";
 import { applyReplaceUnit } from "./ops/replace_unit.js";
 import { applyRenameSymbol } from "./ops/rename_symbol.js";
 import { buildFailureReport, buildSuccessReport } from "./report.js";
-import { canonicalizeSourceForSnapshot, omittedBlobsFromExternalizedUnits, V0_ADAPTER_FINGERPRINT } from "./snapshot.js";
+import {
+  canonicalizeSourceForSnapshot,
+  omittedBlobsFromExternalizedUnits,
+  sha256HexOfCanonicalSource,
+  V0_ADAPTER_FINGERPRINT,
+} from "./snapshot.js";
 import type {
   AdapterFingerprint,
   LogicalUnit,
@@ -140,7 +145,25 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
   for (const f of snapshot.files) {
     const abs = join(snapshotRootPath, ...f.path.split("/"));
     const raw = await readFile(abs, "utf8");
-    backup.set(f.path, canonicalizeSourceForSnapshot(raw));
+    const canonical = canonicalizeSourceForSnapshot(raw);
+    const sha = sha256HexOfCanonicalSource(canonical);
+    if (sha !== f.sha256) {
+      return buildFailureReport({
+        snapshot_id: snapshot.snapshot_id,
+        adapter,
+        toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
+        entries: [
+          entry(
+            "snapshot_content_mismatch",
+            `[gate:snapshot_content_mismatch] on-disk content for "${f.path}" does not match WorkspaceSnapshot.files[].sha256; refresh or re-materialize snapshot before apply.`,
+            null,
+            null,
+          ),
+        ],
+        omitted_due_to_size: omittedOnInput(),
+      });
+    }
+    backup.set(f.path, canonical);
   }
 
   async function restoreDisk(): Promise<void> {
@@ -170,7 +193,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         blobPrefetchWarnings.push({
           code: "blob_unavailable",
           severity: "warning",
-          message: e.message,
+          message: `[blob_unavailable] blob not in local cache — re-materialize snapshot to rebuild (ref=${unit.blob_ref})`,
           op_index: opIndex,
           target_id: unit.id,
           check_scope: "none",

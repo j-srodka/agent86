@@ -28,6 +28,7 @@ describe("fetchBlobText", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(BlobNotFoundError);
       expect(String((e as Error).message)).toContain("[blob_unavailable]");
+      expect(String((e as Error).message)).toContain("re-materialize snapshot");
     }
   });
 });

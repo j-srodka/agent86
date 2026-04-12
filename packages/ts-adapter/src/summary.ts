@@ -24,6 +24,6 @@ export async function buildWorkspaceSummary(
       generated_allowlist_insufficient_assertions: "error",
     },
     blob_cache_path: getBlobCachePath(rootResolved),
-    omitted_due_to_size: omittedBlobsFromExternalizedUnits(snapshot),
+    omitted_due_to_size: omittedBlobsFromExternalizedUnits(snapshot) ?? [],
   };
 }

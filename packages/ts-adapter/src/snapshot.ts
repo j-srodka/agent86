@@ -28,8 +28,9 @@ export function canonicalizeSourceForSnapshot(sourceUtf8: string): string {
   return sourceUtf8.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-function sha256HexOfString(s: string): string {
-  return createHash("sha256").update(s, "utf8").digest("hex");
+/** SHA-256 (lowercase hex) of canonical LF UTF-8 text — must match `SnapshotFile.sha256` from materialization. */
+export function sha256HexOfCanonicalSource(canonicalUtf8: string): string {
+  return createHash("sha256").update(canonicalUtf8, "utf8").digest("hex");
 }
 
 function toPosix(p: string): string {
@@ -127,7 +128,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     const abs = join(snapshotRootResolved, ...rel.split("/"));
     const raw = await readFile(abs, "utf8");
     const canonical = canonicalizeSourceForSnapshot(raw);
-    const fileSha = sha256HexOfString(canonical);
+    const fileSha = sha256HexOfCanonicalSource(canonical);
     files.push({
       path: rel,
       sha256: fileSha,

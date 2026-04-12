@@ -25,7 +25,9 @@ export class BlobNotFoundError extends Error {
   readonly blob_ref: string;
 
   constructor(blobRef: string) {
-    super(`[blob_unavailable] missing blob file for ref=${blobRef}`);
+    super(
+      `[blob_unavailable] blob not in local cache — re-materialize snapshot to rebuild (ref=${blobRef})`,
+    );
     this.blob_ref = blobRef;
   }
 }

@@ -191,7 +191,24 @@ describe("applyBatch", () => {
       toolchainFingerprintAtApply: toolchain,
     });
     expect(report.outcome).toBe("success");
-    expect(report.entries.some((e) => e.code === "blob_unavailable")).toBe(true);
+    const blobEntry = report.entries.find((e) => e.code === "blob_unavailable");
+    expect(blobEntry?.message).toContain("re-materialize snapshot");
     expect(report.omitted_due_to_size.some((o) => o.reason === "unavailable")).toBe(true);
+  });
+
+  it("v1: snapshot_content_mismatch when on-disk file bytes drift from snapshot.files.sha256", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await writeFile(join(dir, "f.ts"), `export function drift(): void {}\n`, "utf8");
+    const snap = await materializeSnapshot({ rootPath: dir });
+    await writeFile(join(dir, "f.ts"), `export function drift(): void { }\n`, "utf8");
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      ops: [],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("snapshot_content_mismatch");
+    expect(report.entries[0]?.message).toContain("[gate:snapshot_content_mismatch]");
   });
 });

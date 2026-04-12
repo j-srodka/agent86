@@ -22,6 +22,8 @@ describe("buildWorkspaceSummary (Task 4)", () => {
     expect(summary.blob_cache_path).toBe(getBlobCachePath(resolve(dir)));
     expect(summary.omitted_due_to_size).toEqual([]);
     const json = JSON.parse(JSON.stringify(summary)) as WorkspaceSummary;
+    expect(json).toHaveProperty("omitted_due_to_size");
+    expect(Array.isArray(json.omitted_due_to_size)).toBe(true);
     expect(json.manifest_url).toBeNull();
     expect(json.policies.generated_allowlist_insufficient_assertions).toBe("error");
   });
