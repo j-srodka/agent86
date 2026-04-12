@@ -38,6 +38,9 @@ describe("ValidationReport JSON round-trip", () => {
     const revived = JSON.parse(JSON.stringify(report)) as ValidationReport;
     expect(revived).toEqual(report);
     expect(revived.outcome).toBe("success");
+    expect(revived.toolchain_fingerprint_at_apply).toBe(toolchain);
+    expect(revived.id_resolve_delta).toEqual({});
+    expect(revived.omitted_due_to_size).toEqual([]);
     expect(revived.entries[0]?.code).toBe("parse_scope_file");
   });
 
@@ -108,6 +111,9 @@ describe("ValidationReport JSON round-trip", () => {
     const revived = JSON.parse(JSON.stringify(report)) as ValidationReport;
     expect(revived).toEqual(report);
     expect(revived.outcome).toBe("failure");
+    expect(revived.toolchain_fingerprint_at_apply).toBe(toolchain);
+    expect(revived.id_resolve_delta).toEqual({});
+    expect(revived.omitted_due_to_size).toEqual([]);
     expect(revived.next_snapshot_id).toBeNull();
   });
 });

@@ -66,7 +66,7 @@ export function buildFailureReport(params: BuildFailureReportParams): Validation
 
 /**
  * Stub entry factory for future generated-unit allowlist checks (section 11 / 12.1).
- * Effective batch severity follows `WorkspaceSummary.policies` (section 6.1).
+ * Effective batch severity follows `getGeneratedAllowlistPolicy()` (section 6.1).
  */
 export function stubAllowlistWithoutGeneratorAwarenessEntry(input: {
   op_index: number | null;

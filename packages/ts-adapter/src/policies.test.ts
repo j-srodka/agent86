@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+import { getGeneratedAllowlistPolicy } from "./policies.js";
+import type { WorkspaceSummary } from "./types.js";
+
+describe("getGeneratedAllowlistPolicy", () => {
+  it('defaults absent field to "error" (section 6.1 fail-safe)', () => {
+    expect(getGeneratedAllowlistPolicy({})).toBe("error");
+  });
+
+  it("reads explicit warning from policies object", () => {
+    expect(
+      getGeneratedAllowlistPolicy({
+        generated_allowlist_insufficient_assertions: "warning",
+      }),
+    ).toBe("warning");
+  });
+
+  it("reads explicit error from policies object", () => {
+    expect(
+      getGeneratedAllowlistPolicy({
+        generated_allowlist_insufficient_assertions: "error",
+      }),
+    ).toBe("error");
+  });
+
+  it("uses nested policies from WorkspaceSummary", () => {
+    const summary: WorkspaceSummary = {
+      snapshot_id: "snap:1",
+      max_batch_ops: 50,
+      manifest_url: null,
+      policies: { generated_allowlist_insufficient_assertions: "warning" },
+    };
+    expect(getGeneratedAllowlistPolicy(summary)).toBe("warning");
+  });
+
+  it("treats absent nested policy as error", () => {
+    const summary: WorkspaceSummary = {
+      snapshot_id: "snap:1",
+      max_batch_ops: 50,
+      manifest_url: null,
+      policies: {},
+    };
+    expect(getGeneratedAllowlistPolicy(summary)).toBe("error");
+  });
+});

@@ -80,8 +80,10 @@ export interface ValidationReport {
   adapter: AdapterFingerprint;
   outcome: ValidationOutcome;
   next_snapshot_id: string | null;
+  /** Always present on the wire; empty when no id remapping occurred. */
   id_resolve_delta: Record<string, string>;
   entries: ValidationEntry[];
+  /** Always present on the wire; empty when nothing was externalized. */
   omitted_due_to_size: OmittedBlob[];
   toolchain_fingerprint_at_apply: string;
 }
@@ -93,7 +95,8 @@ export interface ValidationReport {
 export interface WorkspaceSummaryPolicies {
   /**
    * When absent at the wire level, generic processors MUST treat effective policy
-   * as `"error"` (section 6.1 fail-safe).
+   * as `"error"` (section 6.1 fail-safe). Use `getGeneratedAllowlistPolicy()`
+   * (`policies.ts`) instead of reading this field directly.
    */
   generated_allowlist_insufficient_assertions?: "error" | "warning";
 }
