@@ -106,7 +106,7 @@ export interface WorkspaceSummary {
   /** Same value as the snapshot header / `AdapterFingerprint.grammar_digest`. */
   grammar_digest: string;
   max_batch_ops: number;
-  /** `file:` URL or repo-relative path when known; `null` when absent (Task 10). */
+  /** Absolute `file:` URL when `agent-ir.manifest.json` exists at snapshot root; else `null`. */
   manifest_url: string | null;
   policies: WorkspaceSummaryPolicies;
 }

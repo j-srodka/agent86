@@ -12,7 +12,7 @@ describe("buildWorkspaceSummary (Task 4)", () => {
     const dir = await mkdtemp(join(tmpdir(), "agent86-sum-"));
     await writeFile(join(dir, "m.ts"), `export function x(): void {}\n`, "utf8");
     const snap = await materializeSnapshot({ rootPath: dir });
-    const summary = buildWorkspaceSummary(snap);
+    const summary = await buildWorkspaceSummary(snap, dir);
     expect(summary.snapshot_id).toBe(snap.snapshot_id);
     expect(summary.grammar_digest).toBe(snap.grammar_digest);
     expect(summary.max_batch_ops).toBe(snap.adapter.max_batch_ops);
@@ -21,6 +21,15 @@ describe("buildWorkspaceSummary (Task 4)", () => {
     const json = JSON.parse(JSON.stringify(summary)) as WorkspaceSummary;
     expect(json.manifest_url).toBeNull();
     expect(json.policies.generated_allowlist_insufficient_assertions).toBe("error");
+  });
+
+  it("sets manifest_url to file URL when agent-ir.manifest.json exists (Task 10)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-sum-"));
+    await writeFile(join(dir, "m.ts"), `export function x(): void {}\n`, "utf8");
+    await writeFile(join(dir, "agent-ir.manifest.json"), "{}\n", "utf8");
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const summary = await buildWorkspaceSummary(snap, dir);
+    expect(summary.manifest_url).toMatch(/^file:/);
   });
 
   it("legacy-shaped summary omitting policies still resolves allowlist policy to error", () => {

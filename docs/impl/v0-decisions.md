@@ -72,9 +72,15 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 
 ## Manifest discovery (spec section 16)
 
-*TBD (Task 10) — wire resolution, default paths, etc.*
+**Chosen mechanism (v0):** A single file **`agent-ir.manifest.json`** at the **snapshot workspace root** — the same absolute directory passed to **`materializeSnapshot({ rootPath })`** and to **`applyBatch({ snapshotRootPath })`**. Discovery is **`existsSync`/`stat`-style** on that path only (no crawl of nested packages).
 
-**`manifest_url` format (normative when Task 10 lands):** Whatever string is placed in **`WorkspaceSummary.manifest_url`** MUST be **usable to fetch or open the manifest without additional implicit repo-root context** — e.g. an absolute **`file:`** URL, a fully qualified HTTPS URL, or another locator an agent can resolve **standalone**. Do not emit a bare relative path that only makes sense combined with an undocumented CWD or “assume repo root” rule unless that combination is also specified in the same summary or a linked normative field.
+**Rationale:** One unambiguous location in monorepos (no “which `package.json`?” rule), easy to document and test, matches the plan’s first suggested option, and keeps the read path O(1).
+
+**Alternatives not used:** A custom field under **`package.json`** (e.g. `"agentIr": { … }`) was rejected for v0 because workspaces often have many **`package.json`** files; picking a single convention without extra hierarchy would be arbitrary.
+
+**`WorkspaceSummary.manifest_url`:** If **`agent-ir.manifest.json`** exists and is a regular file, set **`manifest_url`** to its absolute **`file:`** URL (Node **`pathToFileURL(absolutePath).href`**). If the file is absent, **`manifest_url`** is **`null`**. This satisfies the standalone-locator rule: agents can open the manifest without implicit repo-root context.
+
+**Manifest body:** If the file is missing, the adapter treats the manifest as **empty** — logically **`{}`** — and performs **no network fetch**. v0 does not resolve **`https:`** or other remote URLs from the manifest; only **`file:`** (via the resolved on-disk path above) is supported for the summary field. If the file exists but contains invalid JSON, v0 returns **`{}`** for parsed content (lenient) so the read path does not throw; callers that need strict validation can add a separate gate later.
 
 ## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`)
 

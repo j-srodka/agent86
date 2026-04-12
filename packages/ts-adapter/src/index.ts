@@ -6,6 +6,7 @@ export * from "./parser.js";
 export * from "./units.js";
 export * from "./snapshot.js";
 export * from "./summary.js";
+export * from "./manifest.js";
 export * from "./id_resolve.js";
 export * from "./apply.js";
 export * from "./ops/replace_unit.js";
