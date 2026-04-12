@@ -61,4 +61,9 @@ Before writing **`ab-harness/.pinned-rev`**, inspect the candidate repo’s **lo
 
 ## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`)
 
-*TBD (Tasks 5–6 as shapes stabilize).*
+- **`replace_unit`:** `{ "op": "replace_unit", "target_id": string, "new_text": string }` — replaces the **entire** logical unit span `[start_byte, end_byte)` (canonical LF source) with `new_text`, then re-parses and re-snapshots. For `export function …`, the Tree-sitter **`function_declaration`** range usually starts at the `function` keyword (the `export ` prefix sits outside that node); **`new_text`** must splice valid source for that span (often `function name() { … }` without duplicating `export`).
+- **`rename_symbol`:** `{ "op": "rename_symbol", "target_id": string, "new_name": string }` — v0 **function_declaration only**, **same file**; walks the declaration subtree and renames `identifier` nodes matching the declared name (name-independent unit **ids**; **`id_resolve_delta`** empty on success).
+
+## `rename_symbol` scope (v0)
+
+**Same-file, `function_declaration` only** (no `method_definition`, no cross-file). Identifiers matching the old name **inside** that declaration subtree are rewritten (declaration name, calls, nested identifiers with that spelling). **`id_resolve`** does not encode symbol names — renames do **not** emit `id_resolve_delta` entries in v0.

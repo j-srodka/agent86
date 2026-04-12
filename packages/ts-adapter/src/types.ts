@@ -145,3 +145,18 @@ export type V0CoreApplyFailureCode =
   | "batch_size_exceeded"
   | "illegal_target_generated"
   | "allowlist_without_generator_awareness";
+
+/** v0 op batch JSON shapes (subset; full schema deferred). */
+export type ReplaceUnitOp = {
+  op: "replace_unit";
+  target_id: string;
+  new_text: string;
+};
+
+export type RenameSymbolOp = {
+  op: "rename_symbol";
+  target_id: string;
+  new_name: string;
+};
+
+export type V0Op = ReplaceUnitOp | RenameSymbolOp;
