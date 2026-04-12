@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { applyBatch } from "./apply.js";
 import { getBlobCachePath } from "./blobs.js";
 import { materializeSnapshot } from "./snapshot.js";
+import { buildWorkspaceSummary } from "./summary.js";
 
 const toolchain = "toolchain:test-apply";
 
@@ -194,6 +195,60 @@ describe("applyBatch", () => {
     const blobEntry = report.entries.find((e) => e.code === "blob_unavailable");
     expect(blobEntry?.message).toContain("re-materialize snapshot");
     expect(report.omitted_due_to_size.some((o) => o.reason === "unavailable")).toBe(true);
+  });
+
+  it("v1: allowlist insufficient assertion without WorkspaceSummary cites fail-safe in message", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await mkdir(join(dir, "__generated__"), { recursive: true });
+    await writeFile(
+      join(dir, "__generated__", "g.ts"),
+      `// @generated\nexport function g(): number {\n  return 1;\n}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "agent-ir.manifest.json"),
+      JSON.stringify({ generated_edit_allowlist: ["__generated__/g.ts"] }),
+      "utf8",
+    );
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const u = snap.units[0]!;
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      ops: [{ op: "replace_unit", target_id: u.id, new_text: `function g(): number {\n  return 2;\n}\n` }],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("allowlist_without_generator_awareness");
+    expect(report.entries[0]?.message).toContain("WorkspaceSummary not provided");
+  });
+
+  it("v1: allowlist insufficient with WorkspaceSummary cites read path in message", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    await mkdir(join(dir, "__generated__"), { recursive: true });
+    await writeFile(
+      join(dir, "__generated__", "g.ts"),
+      `// @generated\nexport function g(): number {\n  return 1;\n}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "agent-ir.manifest.json"),
+      JSON.stringify({ generated_edit_allowlist: ["__generated__/g.ts"] }),
+      "utf8",
+    );
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const u = snap.units[0]!;
+    const summary = await buildWorkspaceSummary(snap, dir);
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      workspaceSummary: summary,
+      ops: [{ op: "replace_unit", target_id: u.id, new_text: `function g(): number {\n  return 2;\n}\n` }],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("failure");
+    expect(report.entries[0]?.code).toBe("allowlist_without_generator_awareness");
+    expect(report.entries[0]?.message).toContain("WorkspaceSummary was provided");
   });
 
   it("v1: snapshot_content_mismatch when on-disk file bytes drift from snapshot.files.sha256", async () => {

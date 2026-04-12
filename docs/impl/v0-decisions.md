@@ -54,6 +54,8 @@ as installed from the **pnpm-lockfile-pinned** npm package `tree-sitter-typescri
 
 **Wire shape:** Every **`SnapshotFile`** and **`LogicalUnit`** carries **`provenance`**, always set — never omitted on the wire. **`{ kind: "authored" }`** is explicit (not “absence of generated”). When **`kind === "generated"`**, **`detected_by`** is **required** and names the rule that matched so operators and agents can audit classification.
 
+**Scope — file-level only:** Classification is **per source file** (path + file header). **`LogicalUnit.provenance`** is inherited from the file and does not reflect symbol-level or cross-file facts. Tracking whether an individual export is “generated” while the file is mixed-authored, or correlating generated symbols across files, is **out of scope** for pattern-based v1 and is a **v2+** concern if added.
+
 **Strategy:** Pattern-based detection only in v1. The adapter inspects **repo-relative POSIX paths** and the **first five lines** of the canonical LF file text (the same string used for hashing and parsing — **no second `readFile`**). **No manifest** is required for detection.
 
 **Rules (apply in order; first match wins):**
@@ -73,7 +75,7 @@ If no rule matches: **`{ kind: "authored" }`** (no **`detected_by`**).
 
 **Typed workflow assertions on ops:** An op MAY include **`generator_will_not_run: true`** and/or **`generator_inputs_patched`** (non-empty array of unit id strings). At least one assertion MUST be present to use the allowlist escape. If the target is generated, allowlisted, and asserted → batch MAY proceed; the adapter still emits **`allowlist_without_generator_awareness`** as a **warning** for auditability. If the target is generated, allowlisted, and **not** asserted → **`allowlist_without_generator_awareness`** with severity from **`WorkspaceSummary.policies.generated_allowlist_insufficient_assertions`** (**`getGeneratedAllowlistPolicy()`**), default **`error`**.
 
-**Read path:** **`WorkspaceSummary.generated_file_count`** counts **`SnapshotFile`** entries with **`provenance.kind === "generated"`** so agents see whether detection fired.
+**Read path:** **`WorkspaceSummary.generated_file_count`** counts **`SnapshotFile`** entries with **`provenance.kind === "generated"`**. **`WorkspaceSummary.has_generated_files`** is **`true`** iff that count is **> 0** (cheap boolean for conditioning). Agents **must** still inspect **`SnapshotFile.provenance`** and **`LogicalUnit.provenance`** per target — the count and boolean only mean “something in this snapshot was classified generated,” not which units are safe to edit.
 
 **Follow-up (not v1 — tracked separately):** **Manifest-declared provenance override** (option 1): e.g. **`generated_paths`** (globs or explicit paths) in **`agent-ir.manifest.json`** so non-standard repos can mark files **`generated`** when patterns miss. **Manifest wins over pattern match** when both apply. Implementation is deferred to a dedicated issue.
 

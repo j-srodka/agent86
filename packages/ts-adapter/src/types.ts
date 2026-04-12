@@ -116,6 +116,8 @@ export interface WorkspaceSummary {
   max_batch_ops: number;
   /** Count of tracked files with `provenance.kind === "generated"` in this snapshot. */
   generated_file_count: number;
+  /** True iff `generated_file_count > 0` (same snapshot). */
+  has_generated_files: boolean;
   /** Absolute `file:` URL when `agent-ir.manifest.json` exists at snapshot root; else `null`. */
   manifest_url: string | null;
   policies: WorkspaceSummaryPolicies;

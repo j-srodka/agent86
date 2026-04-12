@@ -34,9 +34,20 @@ export interface ApplyBatchInput {
   toolchainFingerprintAtApply: string;
   /**
    * When provided, `policies.generated_allowlist_insufficient_assertions` is used for §11 allowlist
-   * gates. When omitted, the fail-safe `"error"` effective policy applies (section 6.1).
+   * gates. When omitted, the fail-safe `"error"` effective policy applies (section 6.1), and
+   * `allowlist_without_generator_awareness` error entries state that `WorkspaceSummary` was not
+   * provided (distinguishable from an explicit read-path `"error"` policy).
    */
   workspaceSummary?: WorkspaceSummary;
+}
+
+function allowlistInsufficientAssertionsErrorMessage(workspaceSummary: WorkspaceSummary | undefined): string {
+  const core =
+    "Op targets an allowlisted generated unit without generator_will_not_run or non-empty generator_inputs_patched.";
+  if (workspaceSummary === undefined) {
+    return `${core} Policy defaulted to error: WorkspaceSummary not provided to applyBatch (section 6.1 fail-safe).`;
+  }
+  return `${core} WorkspaceSummary was provided; generated_allowlist_insufficient_assertions is "error" or omitted with effective "error" (section 6.1).`;
 }
 
 function opHasGeneratorWorkflowAssertion(op: V0Op): boolean {
@@ -203,8 +214,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             {
               code: "allowlist_without_generator_awareness",
               severity: "error",
-              message:
-                "Op targets an allowlisted generated unit without generator_will_not_run or non-empty generator_inputs_patched.",
+              message: allowlistInsufficientAssertionsErrorMessage(workspaceSummary),
               op_index: opIndex,
               target_id: op.target_id,
               check_scope: "file",

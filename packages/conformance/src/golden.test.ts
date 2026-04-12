@@ -210,6 +210,7 @@ describe("v1 — generated provenance (section 11)", () => {
       expect(s.units[0]!.provenance).toEqual(s.files[0]!.provenance);
       const summary = await buildWorkspaceSummary(s, root);
       expect(summary.generated_file_count).toBe(1);
+      expect(summary.has_generated_files).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -303,6 +304,49 @@ describe("v1 — generated provenance (section 11)", () => {
       const audits = report.entries.filter((e) => e.code === "allowlist_without_generator_awareness");
       expect(audits).toHaveLength(1);
       expect(audits[0]!.severity).toBe("warning");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applyBatch warning policy + allowlist + no assertion → success with allowlist_without_generator_awareness warning", async () => {
+    const root = await copyRelFixtureToTemp("__generated__/generated_path.ts");
+    try {
+      await writeFile(
+        join(root, "agent-ir.manifest.json"),
+        JSON.stringify({
+          generated_edit_allowlist: ["__generated__/generated_path.ts"],
+        }),
+        "utf8",
+      );
+      const snap = await materializeSnapshot({ rootPath: root });
+      const base = await buildWorkspaceSummary(snap, root);
+      const summary = {
+        ...base,
+        policies: { generated_allowlist_insufficient_assertions: "warning" as const },
+      };
+      const u = snap.units[0]!;
+      const before = await readFile(join(root, "__generated__", "generated_path.ts"), "utf8");
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        workspaceSummary: summary,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: u.id,
+            new_text: `function generatedPath(): string {\n  return "warn-policy";\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const w = report.entries.filter((e) => e.code === "allowlist_without_generator_awareness");
+      expect(w.length).toBeGreaterThanOrEqual(1);
+      expect(w.every((e) => e.severity === "warning")).toBe(true);
+      const after = await readFile(join(root, "__generated__", "generated_path.ts"), "utf8");
+      expect(after).not.toBe(before);
+      expect(after).toContain("warn-policy");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

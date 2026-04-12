@@ -21,6 +21,7 @@ export async function buildWorkspaceSummary(
     grammar_digest: snapshot.grammar_digest,
     max_batch_ops: snapshot.adapter.max_batch_ops,
     generated_file_count,
+    has_generated_files: generated_file_count > 0,
     manifest_url,
     policies: {
       generated_allowlist_insufficient_assertions: "error",
