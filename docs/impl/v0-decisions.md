@@ -150,15 +150,15 @@ v0 **canonicalization is LF line-ending normalization only** before hash and par
 
 The **flattened forward map** is satisfied **trivially** in v0 (identity only; no moves). Codes **`ghost_unit`** and **`unknown_or_superseded_id`** are wired where **`resolveCanonicalUnitId`** applies; **explicit tests for non-identity supersession chains** require **`move_unit`** (v1). When **`move_unit`** lands, add **ghost detection** and **forward-edge** tests.
 
-### Rejection codes: in spec section 12.1 table, **never emitted** by the v0 adapter
+### Rejection codes: in spec section 12.1 table, **never emitted** by the reference adapter (v0 list)
 
-The following normative codes appear in the locked table for completeness; **v0 does not emit them** on any path (stubs / future use only):
+The following normative codes appear in the locked table for completeness; the **v0** adapter did not emit them on any path (stubs / future use). **As of v1**, this list is unchanged **except** that **`snapshot_content_mismatch` is handled separately below** — it is **not** one of these “never emitted” codes.
 
 `format_drift` · `reanchored_span` · `illegal_target_generated` · `allowlist_without_generator_awareness` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
 
 Codes **not** in this list may still be **rare** in v0 (e.g. only on specific apply failures). **`lang.*`** subcodes are modeled in types; **v0 emits none**.
 
-**v1 addendum:** **`snapshot_content_mismatch`** is **not** in the “never emitted” set — **`applyBatch`** emits it when on-disk bytes (canonical LF SHA-256) disagree with **`WorkspaceSnapshot.files[].sha256`** (see §9 gate 5).
+**`snapshot_content_mismatch` — emitted by the reference adapter (v1, pre-splice, §9 gate 5):** **`applyBatch`** emits **`snapshot_content_mismatch`** when canonical LF SHA-256 of on-disk bytes for a tracked file **≠** **`WorkspaceSnapshot.files[].sha256`** (see gate 5 above). This code was **never** in the “never emitted” backtick list; documenting it here prevents readers from treating drift detection as a bug.
 
 ### v1 gap table (prioritized)
 
@@ -172,5 +172,5 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | Medium | `rename_symbol` scope | Same-file `function_declaration` only; no methods, no cross-file | Ops |
 | Medium | Manifest strict mode | Lenient `{}` on invalid JSON; no schema validation | 16 |
 | Low | TSX grammar | `skipped_tsx_paths` only; full TSX needs separate grammar constant | 4.1 |
-| Low | Unemitted table codes | See list above | 12.1 |
+| Low | Unemitted table codes | See “never emitted” list above (**excludes** `snapshot_content_mismatch`, emitted by §9 gate 5 v1) | 12.1 |
 | Low | Supersession tests | Ghost chain tests need `move_unit` | 8 |
