@@ -9,6 +9,8 @@ Baseline (brittle string edit) vs IR-backed (`WorkspaceSummary` → units → `r
 | **`TARGET_REPO_URL`** | `https://github.com/colinhacks/zod.git` |
 | **`TARGET_REPO_REV`** | First line of **`packages/ab-harness/.pinned-rev`** (full commit SHA) |
 
+The Zod revision is a **fixed historical commit** chosen for **reproducible** runs and documented harness behavior — it is **not** updated to track the latest Zod release. Override **`TARGET_REPO_REV`** when you intentionally want a different checkout.
+
 Optional:
 
 | Input | Meaning |
@@ -68,7 +70,7 @@ Metrics are only meaningful if the baseline **sometimes fails** while the IR pat
 2. **Clone** (shallow fetch of the pinned commit) into **`.cache/ab-target/`** when needed.
 3. Copy **`fixtures/*.ts`** into **`<clone>/__agent_ir_ab__/`** (isolated snapshot root so runs stay fast; the clone still satisfies “pinned monorepo” context).
 4. For each deterministic task, run **baseline** then **IR** on that directory, counting file reads, parse/outcome, and rounds (v0: one round per task).
-5. Emit **`metrics.json`** (schema version + per-task counters).
+5. Emit **`metrics.json`**: schema version, repo pin, **`adapter_fingerprint`** (full **`V0_ADAPTER_FINGERPRINT`** from **`ts-adapter`**) and **`grammar_digest`** (same as the fingerprint’s grammar field) so published runs are verifiable against a specific adapter build, plus per-task counters.
 
 Optional full **`pnpm test`** at the Zod root is **not** run by default (slow); v0 uses **Tree-sitter parse** success as the green path. Set **`AB_RUN_ZOD_TESTS=1`** in a future revision if you want end-to-end test verification.
 

@@ -1,5 +1,7 @@
 import { join } from "node:path";
 
+import { V0_ADAPTER_FINGERPRINT } from "ts-adapter";
+
 import { ensureClonedCommit } from "./clone.js";
 import { writeMetrics, METRICS_SCHEMA_VERSION } from "./metrics.js";
 import { defaultCacheDir } from "./paths.js";
@@ -26,6 +28,8 @@ export async function main(): Promise<void> {
 
   await writeMetrics(outPath, {
     schema_version: METRICS_SCHEMA_VERSION,
+    adapter_fingerprint: { ...V0_ADAPTER_FINGERPRINT },
+    grammar_digest: V0_ADAPTER_FINGERPRINT.grammar_digest,
     repo: { url: repoUrl, rev },
     snapshot_root: snapshotRoot,
     tasks,
