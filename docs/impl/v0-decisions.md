@@ -21,6 +21,31 @@ as installed from the **pnpm-lockfile-pinned** npm package `tree-sitter-typescri
 3. **Intentional grammar bump without npm churn:** Rare case where the npm version is unchanged but the vendored or resolved artifact was replaced (e.g. manual pin fix) — re-hash and update if the file bytes differ.
 4. **Local path overrides:** Any `pnpm`/npm **link**, **`overrides`**, or **`file:`** resolution that changes which `tree-sitter-typescript` tree is installed — **re-run the digest check** (recompute hash from the resolved on-disk `parser.c`, update `GRAMMAR_DIGEST_V0` if bytes differ, same breaking snapshot semantics).
 
+## Blob externalization (v1)
+
+**Date (normative for this repo):** 2026-04-12
+
+**Default:** `inline_threshold_bytes = 8192` (UTF-8). Passed as an optional argument to **`materializeSnapshot`**; callers may raise it per request to force inlining of larger unit spans.
+
+**Cache location:** Under the **snapshot workspace root** (the same absolute directory passed to **`materializeSnapshot({ rootPath })`** and **`applyBatch({ snapshotRootPath })`**):  
+**`<snapshotRoot>/.cache/blobs/`**  
+(`join(snapshotRoot, ".cache", "blobs")`, resolved to absolute paths in APIs). This directory is created on demand when at least one logical unit is externalized. It is listed in **`WorkspaceSummary.blob_cache_path`** so agents know where local **`sha256:`** payloads are stored.
+
+**Ref and file naming (normative):**
+
+- Wire **`blob_ref`** strings are **`sha256:`** followed by **64 lowercase hexadecimal** digits (the SHA-256 digest of the unit’s UTF-8 bytes, same bytes as the logical span in canonical LF source).
+- On disk, each blob is a single file whose name is the **64-character lowercase hex digest** (no `sha256:` prefix, no extension): **`<blob_cache_path>/<64-hex>`**. File contents are UTF-8 text bytes identical to the logical unit span in canonical LF source.
+
+**Eviction / GC:** **None in v1.** The cache **grows** with materialization; no automatic deletion. Documented limitation until a later version adds policy.
+
+**Cache miss:** **`fetchBlobText(blobRef, snapshotRootPath)`** throws **`BlobNotFoundError`**. The error **`message`** is machine-oriented and includes the normative prefix **`[blob_unavailable]`** so programmatic filters can key off it without parsing prose. On apply, this maps to **`ValidationReport.entries[]`** with code **`blob_unavailable`** (warning severity when the op can still proceed using on-disk file bytes for splice/parse). **`omitted_due_to_size`** MUST still list externalized refs (reason **`inline_threshold`**); if a fetch fails, the same ref may also appear with reason **`unavailable`** per spec **`OmittedBlob.reason`**.
+
+**Read path honesty:** **`WorkspaceSummary.omitted_due_to_size`** lists every **`sha256:`** payload not inlined in **`LogicalUnit`** records ( **`source_text === null`**, **`blob_ref`/`blob_bytes` set**). Absence of a unit’s text in the snapshot object is never treated as “empty”; omissions are explicit.
+
+**Invariant (LogicalUnit):** **`source_text`** and **`blob_ref`** are never both non-null. Inline mode: **`source_text`** is a string (possibly empty), **`blob_ref`** and **`blob_bytes`** are **`null`**. Externalized mode: **`source_text`** is **`null`**, **`blob_ref`** is a **`sha256:`** string, **`blob_bytes`** is the UTF-8 byte length of that payload.
+
+---
+
 ## Canonical bytes and line endings
 
 Snapshot materialization hashes file contents **after normalizing line endings to LF** (`\n`): convert `\r\n` and standalone `\r` to `\n` before SHA-256. Paths are compared using POSIX-style relative paths sorted lexicographically for deterministic ordering.
@@ -111,7 +136,7 @@ v0 **canonicalization is LF line-ending normalization only** before hash and par
 
 ### Blob / inline threshold (spec section 10)
 
-**`inline_threshold_bytes`** (normative, e.g. 8192 in spec) is **not enforced** for externalization in v0: logical payloads stay **inlined**; there are no **`sha256:`** blob refs in v0 outputs; **`omitted_due_to_size`** is always **empty**. Largest practical gap for very large files / harness scale — **v1 priority**.
+**v1:** Implemented per **Blob externalization (v1)** (this file): **`materializeSnapshot`** externalizes unit spans above the threshold into **`<root>/.cache/blobs/`**, **`LogicalUnit.blob_ref` / `omitted_due_to_size`**, and **`fetchBlobText`**. **v0** did not externalize (always inlined; **`omitted_due_to_size`** empty).
 
 ### Generated files and provenance (spec section 11)
 
@@ -133,7 +158,7 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 
 | Priority | Area | Gap | Spec (section) |
 | -------- | ---- | --- | -------------- |
-| High | Blob externalization | `sha256:` refs, `inline_threshold_bytes`, `omitted_due_to_size` never populated | 10 |
+| High | Blob externalization | **Done (v1):** `.cache/blobs/`, `inline_threshold_bytes` on `materializeSnapshot`, `omitted_due_to_size`, `blob_unavailable` on cache miss | 10 |
 | High | Generated provenance | Provenance fields; `illegal_target_generated` / allowlist gates never fire | 11 |
 | High | `move_unit` / `relocate_unit` | Not implemented; `id_resolve` forward map untested for non-identity | 4.3, 8 |
 | Medium | Formatter pinning | LF-only; no Prettier profile; `format_drift` never emitted | 7 |
