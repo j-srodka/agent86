@@ -106,8 +106,14 @@ export interface MaterializeSnapshotOptions {
    */
   inline_threshold_bytes?: number;
   /**
-   * When set, merges `id_resolve` supersession from the prior snapshot after scanning disk
-   * (preserves forward edges and ghost chains when units disappear — see `docs/impl/v0-decisions.md`).
+   * When set, merges `id_resolve` supersession from the prior snapshot after scanning disk.
+   *
+   * **Required for correct Tier I identity after moves:** Callers that applied `move_unit` (or any
+   * future op that emits `id_resolve_delta`) **must** pass the last known `WorkspaceSnapshot`
+   * here on subsequent `materializeSnapshot` calls. Otherwise superseded ids are not carried
+   * forward, and `applyBatch` may emit `unknown_or_superseded_id` in situations where `ghost_unit`
+   * would apply if forward edges had been preserved — ghost detection **silently degrades**.
+   * See `docs/impl/v0-decisions.md` (move_unit v1).
    */
   previousSnapshot?: WorkspaceSnapshot;
 }
@@ -116,6 +122,10 @@ export interface MaterializeSnapshotOptions {
  * Recursively walk `*.ts` files (glob semantics: all nested dirs; skip `node_modules`;
  * skip `.tsx` by filename). Parse with the v0 TypeScript grammar, extract Tier I units.
  * `.tsx` paths are listed in `skipped_tsx_paths` only (see `docs/impl/v0-decisions.md`).
+ *
+ * **`previousSnapshot`:** When rematerializing after workspace edits that involved superseded ids
+ * (e.g. `move_unit`), pass the snapshot the agent was working from so `id_resolve` merges
+ * correctly; omitting it breaks ghost-chain fidelity (see option JSDoc above).
  */
 export async function materializeSnapshot(options: MaterializeSnapshotOptions): Promise<WorkspaceSnapshot> {
   const snapshotRootResolved = resolve(options.rootPath);

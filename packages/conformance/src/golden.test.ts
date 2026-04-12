@@ -445,6 +445,36 @@ describe("v1 — move_unit (sections 4.3, 8)", () => {
     }
   });
 
+  it("intra-batch: move_unit then replace_unit targeting old id uses running id_resolve; id_superseded + success", async () => {
+    const root = await copyFixtureToTemp("move_export.ts");
+    try {
+      const snap0 = await materializeSnapshot({ rootPath: root });
+      const u = snap0.units[0]!;
+      const oldId = u.id;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap0,
+        ops: [
+          { op: "move_unit", target_id: u.id, destination_file: "intra/dest.ts" },
+          {
+            op: "replace_unit",
+            target_id: oldId,
+            new_text: `function movedOnce(): number {\n  return 77;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const superseded = report.entries.filter((e) => e.code === "id_superseded");
+      expect(superseded.length).toBeGreaterThanOrEqual(1);
+      expect(superseded.some((e) => e.evidence && (e.evidence as { resolved_to?: string }).resolved_to)).toBe(true);
+      const dest = await readFile(join(root, "intra", "dest.ts"), "utf8");
+      expect(dest).toContain("77");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("auto-resolve: replace_unit targeting pre-move id succeeds with id_superseded warning", async () => {
     const root = await copyFixtureToTemp("move_export.ts");
     try {

@@ -8,8 +8,15 @@ Proposed amendments to the locked spec. Each entry must include: date, proposing
 
 **Rationale:** v1 `move_unit` + section 8 auto-resolve emits an explicit **`id_superseded`** warning when an op `target_id` is resolved via `id_resolve` so resolution is never silent. The locked spec section 12.1 table does not yet list this code.
 
-**PROPOSED — add to section 12.1 (Identity and addressing), new row:**
+**Placement:** Add the row to the **Identity and addressing** group of section 12.1 (same subsection as `unknown_or_superseded_id`, `ghost_unit`, etc.).
 
-| `id_superseded` | W | Op `target_id` was a superseded id; the adapter resolved it via `id_resolve` to a live unit. | Confirm the op was intended for the resolved location; use `evidence.resolved_to`. |
+**Normative details:**
+
+- **Severity:** Always **`warning`**. Not policy-configurable (unlike e.g. generated-allowlist policy on the read path).
+- **Evidence:** `evidence` **must** include **`{ resolved_to: string }`** (the live unit id after `id_resolve`).
+
+**PROPOSED — add to section 12.1, Identity and addressing table, new row:**
+
+| `id_superseded` | W | Op `target_id` was a superseded id; the adapter resolved it via `id_resolve` to a live unit. | Confirm the op was intended for the resolved location; branch on `code` and `evidence.resolved_to` (string). |
 
 ---

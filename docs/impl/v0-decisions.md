@@ -128,9 +128,12 @@ For **`replace_unit`** and **`rename_symbol`**, **`id_resolve_delta`** remains *
 ### `id_resolve` forward map (flattened)
 
 - **Snapshot header (`WorkspaceSnapshot.id_resolve`):** **`old_id → new_id`** edges are **transitively closed** (single hop to the **current** live id for a moved logical line of identity). If **`A`** was previously mapped to **`B`**, and **`B`** is later moved to **`C`**, the flattened map stores **`A → C`** (not **`A → B`** with a second hop).
+- **Invariant timing:** The flattened shape holds **after every successful `applyBatch` commit** (end of batch), not only across separate HTTP/tool calls. A **single** batch that chains supersession (e.g. **`move_unit`** **A→B** then **`move_unit`** **B→C**) must leave **`id_resolve[A] = C`**, not **`A → B`** with a second hop still required — the running snapshot inside **`applyBatch`** updates **`id_resolve`** after each op so later ops in the same batch resolve correctly (see conformance: intra-batch move then edit).
 - **Per-batch audit (`ValidationReport.id_resolve_delta`):** Only the **edges produced by this batch** (e.g. **`old_id → new_id`** for the move just applied), not the full history. The snapshot header holds the full flattened map after apply.
 
 **Merge / rematerialize:** When **`materializeSnapshot`** is called with optional **`previousSnapshot`** (see snapshot implementation), **`id_resolve`** entries whose keys are not current live unit ids are **merged** so that superseded ids still forward — including **ghost** edges where the resolved id is **not** live after disk changes — so **`applyBatch`** can emit **`ghost_unit`** per spec section 8.
+
+**Callers must pass `previousSnapshot` after moves:** Integrators that invoke **`materializeSnapshot`** on disk that was changed using **`move_unit`** (or any op that emits non-identity **`id_resolve_delta`**) **must** pass **`previousSnapshot: <last WorkspaceSnapshot the agent used>`** on the next materialization. If **`previousSnapshot`** is omitted, superseded-id rows are not merged from history; **`applyBatch`** may return **`unknown_or_superseded_id`** in cases where **`ghost_unit`** would apply if forward edges had been preserved — **ghost detection silently degrades** to “unknown” from the agent’s perspective.
 
 ### Auto-resolve with warning (Option C)
 
