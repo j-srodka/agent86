@@ -80,7 +80,9 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 
 **`WorkspaceSummary.manifest_url`:** If **`agent-ir.manifest.json`** exists and is a regular file, set **`manifest_url`** to its absolute **`file:`** URL (Node **`pathToFileURL(absolutePath).href`**). If the file is absent, **`manifest_url`** is **`null`**. This satisfies the standalone-locator rule: agents can open the manifest without implicit repo-root context.
 
-**Manifest body:** If the file is missing, the adapter treats the manifest as **empty** — logically **`{}`** — and performs **no network fetch**. v0 does not resolve **`https:`** or other remote URLs from the manifest; only **`file:`** (via the resolved on-disk path above) is supported for the summary field. If the file exists but contains invalid JSON, v0 returns **`{}`** for parsed content (lenient) so the read path does not throw; callers that need strict validation can add a separate gate later.
+**Manifest body:** If the file is missing, the adapter treats the manifest as **empty** — logically **`{}`** — and performs **no network fetch**. v0 does not resolve **`https:`** or other remote URLs from the manifest; only **`file:`** (via the resolved on-disk path above) is supported for the summary field. If the file exists but contains invalid JSON, v0 returns **`{}`** for parsed content (**lenient behavior is explicit in v0**) so the read path does not throw. **v1** should add **strict JSON/schema validation** (and normative error surfacing) **before** manifest content is allowed to drive agent behavior or policy.
+
+**`buildWorkspaceSummary`:** The function is **`async`**. All current in-repo call sites **`await`** it (unit tests only as of Task 11); integrators must not call it synchronously.
 
 ## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`)
 

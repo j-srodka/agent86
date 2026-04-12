@@ -2,7 +2,7 @@
 
 **agent86** is a portable, versioned interchange for agent-to-tool and agent-to-agent code editing: **ops**, **snapshots**, **validation reports**, and **rejection codes** agents can branch on deterministically—instead of prose errors they have to parse.
 
-**Status:** v0 prototype — spec locked, reference implementation in progress.
+**Status:** v0 **reference stack complete** in this repo: TypeScript adapter (Tree-sitter), conformance goldens, A/B harness, and manifest discovery—see **`docs/impl/v0-decisions.md`** and the locked spec below.
 
 ## The problem
 
@@ -10,55 +10,67 @@ Agents editing code today still lean on brittle **line-number** references, get 
 
 ## What this is
 
-A small **Agent IR** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see spec §12.1). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
+A small **Agent IR** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see the spec’s validation code table). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
 
 **What it is not:**
 
 - **Not** a new general-purpose programming language (optional later surface / skin is out of scope for v0).
 - **Not** a replacement for **LSP** or **MCP**—it **complements** them (see below).
-- **Not** production-ready: this is a **v0 prototype**; APIs and repo layout will move until the reference adapter and harness prove out.
+- **Not** a guarantee of production hardening everywhere: v0 is a **prototype**; tighten operational policies after you validate the shape in your environment.
 
-## Key design properties (v0)
+## Normative documents
 
-- **Tier I snapshot-stable identity:** logical units addressed by **opaque ids** within a pinned snapshot—not line numbers as the source of truth.
-- **Normative rejection codes:** agents branch on `code`, not freeform `message` text.
-- **Explicit scope** on validation entries: no implied guarantees beyond what the adapter actually checked (see spec §5.1).
-- **Normative inline threshold** for large payloads: avoid **silent context explosion**; omissions are reported explicitly.
-- **Formatter and grammar drift** are handled with explicit policies and failures—**no silent remap** of ids or spans.
-- **Measurable by design:** v0 ships an A/B harness measuring failed patch rate, full-file reads, and round trips to green tests against a real TypeScript monorepo — so the IR either demonstrates value or tells you why it doesn't.
+| Document | Role |
+| -------- | ---- |
+| [`docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md`](docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md) | **Locked** v0 product spec (agents do not edit in-repo; amendments via `docs/impl/spec-proposals.md` + human apply). |
+| [`docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md`](docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md) | Implementation plan (task order, verification commands). |
+| [`docs/impl/v0-decisions.md`](docs/impl/v0-decisions.md) | Repo-specific behavior: grammar digest, canonical bytes, apply gates, manifest path, etc. |
 
-## Repo structure
+## Repo layout
 
+| Path | Purpose |
+| ---- | ------- |
+| `packages/ts-adapter/` | Reference **TypeScript** adapter: snapshot materialization, `applyBatch`, `WorkspaceSummary`, manifest discovery (`agent-ir.manifest.json`). |
+| `packages/conformance/` | Golden fixtures + Vitest runner (determinism, edit-shift ids). |
+| `packages/ab-harness/` | A/B harness: baseline vs IR-backed tasks, `ab-metrics.json`; see [`packages/ab-harness/README.md`](packages/ab-harness/README.md). |
 
-| Path                      | Purpose                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------ |
-| `docs/superpowers/specs/` | Locked design spec                                                                         |
-| `docs/superpowers/plans/` | Implementation plan (task order, gates, amendments)                                        |
-| `docs/impl/`              | v0 implementation decisions (`v0-decisions.md`), proposed spec edits (`spec-proposals.md`) |
-| `packages/ts-adapter/`    | Reference **TypeScript** adapter (Tree-sitter) — scaffolded per plan                       |
-| `packages/conformance/`   | Golden fixtures + conformance test runner                                                  |
-| `packages/ab-harness/`    | A/B harness: baseline vs IR-backed loop, metrics                                           |
+Collaboration rules: [`AGENTS.md`](AGENTS.md). Cursor rules: [`.cursor/rules/agent86.mdc`](.cursor/rules/agent86.mdc).
 
+## Running the v0 stack
 
-Collaboration and agent rules: `AGENTS.md`. Cursor-specific constraints: `.cursor/rules/agent86.mdc`. Read the spec before the code: `docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md`.
-
-## Getting started
-
-**Prerequisites:** Node 22+, **pnpm**
+**Prerequisites:** Node 22+, **pnpm** (see root `package.json` for `packageManager`).
 
 ```bash
 pnpm install
 pnpm -r build
+pnpm --filter ts-adapter test
 pnpm --filter conformance test
-pnpm --filter ab-harness start   # requires TARGET_REPO_URL and TARGET_REPO_REV
-
 ```
 
-These commands assume the **pnpm workspace and packages** exist as described in the implementation plan. **They will not succeed until the reference implementation is further along.** If you clone now, treat the repo as **spec + plan + collaboration docs** — the working adapter and harness are in progress.
+**A/B harness** (clones a pinned OSS repo under `.cache/ab-target/`; see [`packages/ab-harness/README.md`](packages/ab-harness/README.md)):
 
-## Contributing and collaboration
+```bash
+pnpm ab:bench
+# or: pnpm --filter ab-harness start
+```
 
-Work here uses a **human-in-the-loop multi-agent** setup: **Cursor** as the primary implementer, **Claude (claude.ai)** as an external stress-tester and reviewer (no direct repo access—relay via the human). Read `AGENTS.md` for autonomy policy, spec lock rules, and commit conventions. **Spec amendments** are proposed in `docs/impl/spec-proposals.md` and applied to the locked spec **only by a human**. If you want to collaborate, build another language adapter, or integrate a tool, **open an issue or reach out**; the IR is intentionally **portable and adapter-agnostic**.
+Defaults: **`TARGET_REPO_URL`** and **`TARGET_REPO_REV`** resolve to the pinned Zod commit in **`packages/ab-harness/.pinned-rev`**. Override those env vars to use another checkout.
+
+## Apply path and interchange (spec section 9)
+
+For **`applyBatch`**, the reference adapter enforces (in order): on-disk **grammar artifact** matches the checked-in digest (**Gate 1**), **`WorkspaceSnapshot.grammar_digest`** matches the applying adapter (**Gate 2**), **`AdapterFingerprint`** on the snapshot matches **`V0_ADAPTER_FINGERPRINT`** (name, semver, grammar digest, **`max_batch_ops`**), and **`ops.length ≤ max_batch_ops`**.
+
+**CI / golden workflows** should materialize snapshots with this adapter and treat **full fingerprint equality** as the interchange contract so sessions do not drift across adapter builds.
+
+**Local development:** you still need a matching **grammar digest** on the snapshot and a matching **artifact** on disk; the implementation does not offer a “digest-only, ignore adapter identity” shortcut in the apply path. If you change **`tree-sitter-typescript`** or the adapter fingerprint, re-materialize snapshots and update any pinned constants per **`docs/impl/v0-decisions.md`**.
+
+## Handoff and next steps
+
+- **Integration:** Import **`ts-adapter`** from the workspace package; use **`await buildWorkspaceSummary(snapshot, snapshotRootPath)`** (async) with the same root passed to **`materializeSnapshot`**. Optional manifest: **`agent-ir.manifest.json`** at that root sets **`WorkspaceSummary.manifest_url`** (see **`docs/impl/v0-decisions.md`**).
+- **Spec changes:** propose via **`docs/impl/spec-proposals.md`**; humans apply edits to the locked spec file.
+- **v1 roadmap:** cross-file ops, richer manifest validation, TSX grammar scope, and other items called out in the plan’s “Out of scope” section and in **`docs/impl/v0-decisions.md`** (e.g. strict manifest JSON in v1).
+
+External review: **`AGENTS.md`** describes relaying stress-test passes through **Claude (claude.ai)** when you want a second pair of eyes on reports and diffs.
 
 ## Relationship to LSP and MCP
 
