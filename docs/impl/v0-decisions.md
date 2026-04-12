@@ -48,6 +48,37 @@ as installed from the **pnpm-lockfile-pinned** npm package `tree-sitter-typescri
 
 ---
 
+## Generated file provenance (v1)
+
+**Date (normative for this repo):** 2026-04-12
+
+**Wire shape:** Every **`SnapshotFile`** and **`LogicalUnit`** carries **`provenance`**, always set — never omitted on the wire. **`{ kind: "authored" }`** is explicit (not “absence of generated”). When **`kind === "generated"`**, **`detected_by`** is **required** and names the rule that matched so operators and agents can audit classification.
+
+**Strategy:** Pattern-based detection only in v1. The adapter inspects **repo-relative POSIX paths** and the **first five lines** of the canonical LF file text (the same string used for hashing and parsing — **no second `readFile`**). **No manifest** is required for detection.
+
+**Rules (apply in order; first match wins):**
+
+1. **Header keywords:** Among the first five newline-delimited lines, scan **top to bottom**. The first line that contains **`@generated`** (case-insensitive) → **`kind: "generated"`**, **`detected_by: "header:@generated"`**. Else the first line that contains **`DO NOT EDIT`** (case-insensitive) → **`detected_by: "header:do-not-edit"`**. Covers protobuf/GraphQL headers and common “do not edit” banners.
+2. **Path segments:** Split the relative path on **`/`**. If any segment equals **`__generated__`** → **`detected_by: "path:segment:__generated__"`**. Else if any segment equals **`generated`** → **`detected_by: "path:segment:generated"`**. (Whole segment match — not a substring of a longer segment name.)
+3. **Extensions:** If the basename ends with **`.generated.ts`** or **`.generated.d.ts`** → **`detected_by: "ext:.generated.ts"`** or **`"ext:.generated.d.ts"`** as appropriate.
+4. **Protobuf-style:** If the basename ends with **`.pb.ts`** or **`.pb.d.ts`** → **`detected_by: "path:*.pb.ts"`** or **`"path:*.pb.d.ts"`**.
+
+If no rule matches: **`{ kind: "authored" }`** (no **`detected_by`**).
+
+**Rationale:** Header and path heuristics match widespread tooling without repo-specific config. Segment **`generated/`** catches common `src/generated/...` layouts; **`__generated__/`** matches GraphQL and similar. Extension and **`.pb.*`** rules catch filename conventions when headers are missing. Ordered rules keep **`snapshot_id`** deterministic.
+
+**Apply-time behavior (spec section 11):** Ops that target a **`LogicalUnit`** with **`provenance.kind === "generated"`** are rejected with **`illegal_target_generated`** unless the file path is on the **generated edit allowlist** (see below). The message includes **`[gate:illegal_target_generated]`** and the unit’s **`detected_by`** value.
+
+**Generated edit allowlist:** Optional key **`generated_edit_allowlist`** in **`agent-ir.manifest.json`**: a JSON **array of strings** — repo-relative POSIX paths. A path matches if it **equals** an entry **or** is under a directory entry: an entry **ending with `/**`** matches that prefix (e.g. **`"src/generated/**"`** matches **`src/generated/foo.ts`**). Invalid entries are ignored. This is **not** manifest-declared **provenance** (that is a separate follow-up); it only gates **whether direct edits to generated units are considered** for the §11 allowlist escape.
+
+**Typed workflow assertions on ops:** An op MAY include **`generator_will_not_run: true`** and/or **`generator_inputs_patched`** (non-empty array of unit id strings). At least one assertion MUST be present to use the allowlist escape. If the target is generated, allowlisted, and asserted → batch MAY proceed; the adapter still emits **`allowlist_without_generator_awareness`** as a **warning** for auditability. If the target is generated, allowlisted, and **not** asserted → **`allowlist_without_generator_awareness`** with severity from **`WorkspaceSummary.policies.generated_allowlist_insufficient_assertions`** (**`getGeneratedAllowlistPolicy()`**), default **`error`**.
+
+**Read path:** **`WorkspaceSummary.generated_file_count`** counts **`SnapshotFile`** entries with **`provenance.kind === "generated"`** so agents see whether detection fired.
+
+**Follow-up (not v1 — tracked separately):** **Manifest-declared provenance override** (option 1): e.g. **`generated_paths`** (globs or explicit paths) in **`agent-ir.manifest.json`** so non-standard repos can mark files **`generated`** when patterns miss. **Manifest wins over pattern match** when both apply. Implementation is deferred to a dedicated issue.
+
+---
+
 ## Canonical bytes and line endings
 
 Snapshot materialization hashes file contents **after normalizing line endings to LF** (`\n`): convert `\r\n` and standalone `\r` to `\n` before SHA-256. Paths are compared using POSIX-style relative paths sorted lexicographically for deterministic ordering.
