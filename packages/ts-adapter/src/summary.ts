@@ -1,4 +1,8 @@
+import { resolve } from "node:path";
+
+import { getBlobCachePath } from "./blobs.js";
 import { resolveManifestUrl } from "./manifest.js";
+import { omittedBlobsFromExternalizedUnits } from "./snapshot.js";
 import type { WorkspaceSnapshot, WorkspaceSummary } from "./types.js";
 
 /**
@@ -10,6 +14,7 @@ export async function buildWorkspaceSummary(
   snapshotRootPath: string,
 ): Promise<WorkspaceSummary> {
   const manifest_url = await resolveManifestUrl(snapshotRootPath);
+  const rootResolved = resolve(snapshotRootPath);
   return {
     snapshot_id: snapshot.snapshot_id,
     grammar_digest: snapshot.grammar_digest,
@@ -18,5 +23,7 @@ export async function buildWorkspaceSummary(
     policies: {
       generated_allowlist_insufficient_assertions: "error",
     },
+    blob_cache_path: getBlobCachePath(rootResolved),
+    omitted_due_to_size: omittedBlobsFromExternalizedUnits(snapshot),
   };
 }

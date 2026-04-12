@@ -30,6 +30,8 @@ describe("getGeneratedAllowlistPolicy", () => {
       max_batch_ops: 50,
       manifest_url: null,
       policies: { generated_allowlist_insufficient_assertions: "warning" },
+      blob_cache_path: "/tmp/.cache/blobs",
+      omitted_due_to_size: [],
     };
     expect(getGeneratedAllowlistPolicy(summary)).toBe("warning");
   });
@@ -41,6 +43,8 @@ describe("getGeneratedAllowlistPolicy", () => {
       max_batch_ops: 50,
       manifest_url: null,
       policies: {},
+      blob_cache_path: "/tmp/.cache/blobs",
+      omitted_due_to_size: [],
     };
     expect(getGeneratedAllowlistPolicy(summary)).toBe("error");
   });

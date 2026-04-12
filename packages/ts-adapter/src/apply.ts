@@ -1,13 +1,22 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { BlobNotFoundError, fetchBlobText } from "./blobs.js";
 import { assertGrammarDigestPinned, GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
 import { resolveLogicalUnit } from "./id_resolve.js";
 import { applyReplaceUnit } from "./ops/replace_unit.js";
 import { applyRenameSymbol } from "./ops/rename_symbol.js";
-import { canonicalizeSourceForSnapshot, V0_ADAPTER_FINGERPRINT } from "./snapshot.js";
 import { buildFailureReport, buildSuccessReport } from "./report.js";
-import type { AdapterFingerprint, ValidationEntry, ValidationReport, V0Op, WorkspaceSnapshot } from "./types.js";
+import { canonicalizeSourceForSnapshot, omittedBlobsFromExternalizedUnits, V0_ADAPTER_FINGERPRINT } from "./snapshot.js";
+import type {
+  AdapterFingerprint,
+  LogicalUnit,
+  OmittedBlob,
+  ValidationEntry,
+  ValidationReport,
+  V0Op,
+  WorkspaceSnapshot,
+} from "./types.js";
 
 export interface ApplyBatchInput {
   snapshotRootPath: string;
@@ -34,6 +43,12 @@ function entry(
   };
 }
 
+function mergeOmitted(a: OmittedBlob[], b: OmittedBlob[]): OmittedBlob[] {
+  return [...a, ...b].sort((x, y) =>
+    x.ref.localeCompare(y.ref) || x.bytes - y.bytes || x.reason.localeCompare(y.reason),
+  );
+}
+
 function applyingAdapterFingerprint(): AdapterFingerprint {
   return { ...V0_ADAPTER_FINGERPRINT };
 }
@@ -45,6 +60,8 @@ function applyingAdapterFingerprint(): AdapterFingerprint {
 export async function applyBatch(input: ApplyBatchInput): Promise<ValidationReport> {
   const { snapshot, ops, snapshotRootPath, toolchainFingerprintAtApply } = input;
   const adapter = snapshot.adapter;
+
+  const omittedOnInput = (): OmittedBlob[] => omittedBlobsFromExternalizedUnits(snapshot);
 
   try {
     assertGrammarDigestPinned();
@@ -58,6 +75,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       adapter,
       toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
       entries: [entry("grammar_mismatch", withGate, null, null)],
+      omitted_due_to_size: omittedOnInput(),
     });
   }
 
@@ -74,6 +92,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           null,
         ),
       ],
+      omitted_due_to_size: omittedOnInput(),
     });
   }
 
@@ -96,6 +115,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           null,
         ),
       ],
+      omitted_due_to_size: omittedOnInput(),
     });
   }
 
@@ -112,6 +132,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           null,
         ),
       ],
+      omitted_due_to_size: omittedOnInput(),
     });
   }
 
@@ -131,6 +152,43 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
 
   let current: WorkspaceSnapshot = snapshot;
   const mergedDelta: Record<string, string> = {};
+  const fetchUnavailableOmitted: OmittedBlob[] = [];
+  const blobPrefetchWarnings: ValidationEntry[] = [];
+
+  function failureOmitted(): OmittedBlob[] {
+    return mergeOmitted(omittedOnInput(), fetchUnavailableOmitted);
+  }
+
+  async function prefetchExternalizedBlob(unit: LogicalUnit, opIndex: number): Promise<void> {
+    if (unit.blob_ref == null) {
+      return;
+    }
+    try {
+      await fetchBlobText(unit.blob_ref, snapshotRootPath);
+    } catch (e) {
+      if (e instanceof BlobNotFoundError) {
+        blobPrefetchWarnings.push({
+          code: "blob_unavailable",
+          severity: "warning",
+          message: e.message,
+          op_index: opIndex,
+          target_id: unit.id,
+          check_scope: "none",
+          confidence: "canonical",
+          evidence: { blob_ref: unit.blob_ref },
+        });
+        if (unit.blob_bytes != null) {
+          fetchUnavailableOmitted.push({
+            ref: unit.blob_ref,
+            bytes: unit.blob_bytes,
+            reason: "unavailable",
+          });
+        }
+        return;
+      }
+      throw e;
+    }
+  }
 
   try {
     for (let opIndex = 0; opIndex < ops.length; opIndex++) {
@@ -145,8 +203,10 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             adapter,
             toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
             entries: [entry("unknown_or_superseded_id", "target_id not in snapshot domain", opIndex, op.target_id)],
+            omitted_due_to_size: failureOmitted(),
           });
         }
+        await prefetchExternalizedBlob(unit, opIndex);
         const r = await applyReplaceUnit({
           snapshotRootPath,
           unit,
@@ -159,6 +219,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             adapter,
             toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
             entries: [entry("parse_error", r.message, opIndex, op.target_id)],
+            omitted_due_to_size: failureOmitted(),
           });
         }
         current = r.nextSnapshot;
@@ -174,8 +235,10 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             adapter,
             toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
             entries: [entry("unknown_or_superseded_id", "target_id not in snapshot domain", opIndex, op.target_id)],
+            omitted_due_to_size: failureOmitted(),
           });
         }
+        await prefetchExternalizedBlob(unit, opIndex);
         const r = await applyRenameSymbol({
           snapshotRootPath,
           unit,
@@ -195,6 +258,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             adapter,
             toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
             entries: [entry(code, msg, opIndex, op.target_id)],
+            omitted_due_to_size: failureOmitted(),
           });
         }
         current = r.nextSnapshot;
@@ -210,8 +274,36 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         entries: [
           entry("op_vocabulary_unsupported", "batch op type is not supported in v0", opIndex, null),
         ],
+        omitted_due_to_size: failureOmitted(),
       });
     }
+
+    const omittedFinal = mergeOmitted(omittedBlobsFromExternalizedUnits(current), fetchUnavailableOmitted);
+
+    const successEntries: ValidationEntry[] = [];
+    if (omittedFinal.some((o) => o.reason === "inline_threshold")) {
+      successEntries.push({
+        code: "inline_threshold_exceeded",
+        severity: "warning",
+        message: "One or more unit payloads were externalized per §10; see omitted_due_to_size.",
+        op_index: null,
+        target_id: null,
+        check_scope: "none",
+        confidence: "canonical",
+        evidence: null,
+      });
+    }
+    successEntries.push(...blobPrefetchWarnings);
+    successEntries.push({
+      code: "parse_scope_file",
+      severity: "info",
+      message: "Parse check ran on edited file(s) only.",
+      op_index: null,
+      target_id: null,
+      check_scope: "file",
+      confidence: "canonical",
+      evidence: null,
+    });
 
     return buildSuccessReport({
       snapshot_id: snapshot.snapshot_id,
@@ -219,18 +311,8 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       adapter: applyingAdapterFingerprint(),
       toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
       id_resolve_delta: mergedDelta,
-      entries: [
-        {
-          code: "parse_scope_file",
-          severity: "info",
-          message: "Parse check ran on edited file(s) only.",
-          op_index: null,
-          target_id: null,
-          check_scope: "file",
-          confidence: "canonical",
-          evidence: null,
-        },
-      ],
+      entries: successEntries,
+      omitted_due_to_size: omittedFinal,
     });
   } catch (e) {
     await restoreDisk();
@@ -239,6 +321,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       adapter,
       toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
       entries: [entry("parse_error", String(e), null, null)],
+      omitted_due_to_size: failureOmitted(),
     });
   }
 }

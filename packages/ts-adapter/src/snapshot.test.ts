@@ -18,6 +18,8 @@ describe("materializeSnapshot (Task 3)", () => {
     expect(a.units).toHaveLength(2);
     expect(a.units[0]?.kind).toBe("function_declaration");
     expect(a.units[1]?.kind).toBe("function_declaration");
+    expect(a.units[0]?.blob_ref).toBeNull();
+    expect(a.units[0]?.source_text).toContain("function one");
     expect(new Set(a.units.map((u) => u.id)).size).toBe(2);
     expect(a.id_resolve[a.units[0]!.id]).toBe(a.units[0]!.id);
     expect(a.snapshot_id).toBe(b.snapshot_id);

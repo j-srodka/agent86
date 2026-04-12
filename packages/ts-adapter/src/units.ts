@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import type Parser from "tree-sitter";
 
-import type { LogicalUnit } from "./types.js";
+import type { ExtractedUnitSpan } from "./types.js";
 
 const UNIT_NODE_TYPES = ["function_declaration", "method_definition"] as const;
 type UnitNodeType = (typeof UNIT_NODE_TYPES)[number];
@@ -63,7 +63,7 @@ export function extractLogicalUnits(
     snapshotRootResolved: string;
     filePathPosix: string;
   },
-): LogicalUnit[] {
+): ExtractedUnitSpan[] {
   const nodes: Parser.SyntaxNode[] = [];
   collectUnitNodes(tree.rootNode, nodes);
   nodes.sort((a, b) => a.startIndex - b.startIndex);
@@ -83,6 +83,6 @@ export function extractLogicalUnits(
       start_byte: n.startIndex,
       end_byte: n.endIndex,
       kind,
-    };
+    } satisfies ExtractedUnitSpan;
   });
 }

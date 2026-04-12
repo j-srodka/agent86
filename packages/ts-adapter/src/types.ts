@@ -109,6 +109,13 @@ export interface WorkspaceSummary {
   /** Absolute `file:` URL when `agent-ir.manifest.json` exists at snapshot root; else `null`. */
   manifest_url: string | null;
   policies: WorkspaceSummaryPolicies;
+  /**
+   * Absolute path to `<snapshotRoot>/.cache/blobs/` (§10 local blob store).
+   * Populated even when empty so agents know where `sha256:` refs resolve.
+   */
+  blob_cache_path: string;
+  /** Every externalized unit payload (`blob_ref`); never silent omission on the read path. */
+  omitted_due_to_size: OmittedBlob[];
 }
 
 export interface SnapshotFile {
@@ -118,12 +125,32 @@ export interface SnapshotFile {
   byte_length: number;
 }
 
+/** Tree-sitter extraction only; `materializeSnapshot` attaches `source_text` / `blob_*`. */
+export interface ExtractedUnitSpan {
+  id: string;
+  file_path: string;
+  start_byte: number;
+  end_byte: number;
+  kind: "function_declaration" | "method_definition";
+}
+
+/**
+ * Tier I unit with either inlined source (`source_text`) or externalized payload (`blob_ref`).
+ * Invariant: `source_text` and `blob_ref` are never both non-null. Externalized: `source_text === null`,
+ * `blob_ref` is `sha256:<hex>`, `blob_bytes` is UTF-8 length. Inlined: `blob_ref === null`, `blob_bytes === null`.
+ */
 export interface LogicalUnit {
   id: string;
   file_path: string;
   start_byte: number;
   end_byte: number;
   kind: "function_declaration" | "method_definition";
+  /** Present when the unit span is inlined (UTF-8); null when externalized. */
+  source_text: string | null;
+  /** `sha256:<hex>` when externalized; null when inlined. */
+  blob_ref: string | null;
+  /** Byte length of the UTF-8 payload when externalized; null when inlined. */
+  blob_bytes: number | null;
 }
 
 export interface WorkspaceSnapshot {

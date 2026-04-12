@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { applyBatch, materializeSnapshot } from "ts-adapter";
+import { applyBatch, buildWorkspaceSummary, fetchBlobText, materializeSnapshot } from "ts-adapter";
 
 /**
  * Conformance goldens (implementation plan Task 8).
@@ -114,6 +114,74 @@ describe("Task 8 — conformance goldens", () => {
       expect(topB.id).toBe(topA.id);
       expect(midB.id).not.toBe(midA.id);
       expect(botB.id).not.toBe(botA.id);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v1 — blob externalization (section 10)", () => {
+  async function copyLargeFixtureToTemp(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-blob-"));
+    await copyFile(fixturePath("large_unit.ts"), join(dir, "large_unit.ts"));
+    return dir;
+  }
+
+  it("default threshold externalizes large unit; summary lists omitted_due_to_size", async () => {
+    const root = await copyLargeFixtureToTemp();
+    try {
+      const s = await materializeSnapshot({ rootPath: root });
+      expect(s.units).toHaveLength(1);
+      const u = s.units[0]!;
+      expect(u.source_text).toBeNull();
+      expect(u.blob_ref).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(u.blob_bytes).toBeGreaterThan(8192);
+      const summary = await buildWorkspaceSummary(s, root);
+      expect(summary.omitted_due_to_size).toHaveLength(1);
+      expect(summary.omitted_due_to_size[0]!.ref).toBe(u.blob_ref);
+      expect(summary.omitted_due_to_size[0]!.bytes).toBe(u.blob_bytes);
+      expect(summary.omitted_due_to_size[0]!.reason).toBe("inline_threshold");
+      const text = await fetchBlobText(u.blob_ref!, root);
+      expect(Buffer.byteLength(text, "utf8")).toBe(u.blob_bytes);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("raised threshold inlines unit; omitted_due_to_size empty on summary", async () => {
+    const root = await copyLargeFixtureToTemp();
+    try {
+      const s = await materializeSnapshot({ rootPath: root, inline_threshold_bytes: 100_000 });
+      const u = s.units[0]!;
+      expect(u.source_text).not.toBeNull();
+      expect(u.blob_ref).toBeNull();
+      const summary = await buildWorkspaceSummary(s, root);
+      expect(summary.omitted_due_to_size).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replace_unit on externalized unit succeeds; result still externalized when large", async () => {
+    const root = await copyLargeFixtureToTemp();
+    try {
+      const snapA = await materializeSnapshot({ rootPath: root });
+      const u = snapA.units[0]!;
+      expect(u.blob_ref).toBeTruthy();
+      const pad = "z".repeat(8200);
+      const newText = `function big(): void {\n  // ${pad}\n}\n`;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snapA,
+        ops: [{ op: "replace_unit", target_id: u.id, new_text: newText }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      expect(report.omitted_due_to_size.some((o) => o.reason === "inline_threshold")).toBe(true);
+      const snapB = await materializeSnapshot({ rootPath: root });
+      const u2 = snapB.units[0]!;
+      expect(u2.blob_ref).toBeTruthy();
+      expect(u2.source_text).toBeNull();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

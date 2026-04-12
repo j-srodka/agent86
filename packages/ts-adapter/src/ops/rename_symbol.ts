@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type Parser from "tree-sitter";
 
-import { materializeSnapshot, canonicalizeSourceForSnapshot } from "../snapshot.js";
+import { materializeSnapshot, canonicalizeSourceForSnapshot, type MaterializeSnapshotOptions } from "../snapshot.js";
 import { parseTypeScriptSource } from "../parser.js";
 import type { LogicalUnit, WorkspaceSnapshot } from "../types.js";
 
@@ -10,6 +10,8 @@ export interface RenameSymbolInput {
   snapshotRootPath: string;
   unit: LogicalUnit;
   newName: string;
+  /** Forwarded to `materializeSnapshot` after the edit (§10 threshold). */
+  materialize?: Pick<MaterializeSnapshotOptions, "inline_threshold_bytes">;
 }
 
 export interface RenameSymbolOk {
@@ -102,7 +104,10 @@ export async function applyRenameSymbol(input: RenameSymbolInput): Promise<Renam
   }
 
   await writeFile(abs, next, "utf8");
-  const nextSnapshot = await materializeSnapshot({ rootPath: snapshotRootPath });
+  const nextSnapshot = await materializeSnapshot({
+    rootPath: snapshotRootPath,
+    ...input.materialize,
+  });
 
   return {
     ok: true,

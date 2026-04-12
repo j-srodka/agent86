@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
+import { getBlobCachePath } from "./blobs.js";
 import { GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
 import { parseTypeScriptSource } from "./parser.js";
 import { extractLogicalUnits } from "./units.js";
-import type { AdapterFingerprint, LogicalUnit, SnapshotFile, WorkspaceSnapshot } from "./types.js";
+import type {
+  AdapterFingerprint,
+  ExtractedUnitSpan,
+  LogicalUnit,
+  OmittedBlob,
+  SnapshotFile,
+  WorkspaceSnapshot,
+} from "./types.js";
 
 /** Applying adapter identity for materialized snapshots; apply gate compares incoming snapshots to this. */
 export const V0_ADAPTER_FINGERPRINT: AdapterFingerprint = {
@@ -82,9 +90,17 @@ function computeSnapshotId(input: {
   return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
 }
 
+/** §10 default inline cap (UTF-8 bytes per logical unit span). */
+export const DEFAULT_INLINE_THRESHOLD_BYTES = 8192;
+
 export interface MaterializeSnapshotOptions {
   /** Directory to snapshot (absolute or CWD-relative). */
   rootPath: string;
+  /**
+   * Externalize unit spans strictly larger than this (UTF-8 byte length). Raise to force inlining
+   * for a single materialization (§10).
+   */
+  inline_threshold_bytes?: number;
 }
 
 /**
@@ -94,6 +110,7 @@ export interface MaterializeSnapshotOptions {
  */
 export async function materializeSnapshot(options: MaterializeSnapshotOptions): Promise<WorkspaceSnapshot> {
   const snapshotRootResolved = resolve(options.rootPath);
+  const inlineThreshold = options.inline_threshold_bytes ?? DEFAULT_INLINE_THRESHOLD_BYTES;
   const grammarDigest = GRAMMAR_DIGEST_V0;
 
   const tsRel: string[] = [];
@@ -117,12 +134,15 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
       byte_length: Buffer.byteLength(canonical, "utf8"),
     });
     const tree = parseTypeScriptSource(canonical);
-    const fileUnits = extractLogicalUnits(tree, {
+    const spans = extractLogicalUnits(tree, {
       grammarDigest,
       snapshotRootResolved,
       filePathPosix: rel,
     });
-    units.push(...fileUnits);
+    for (const span of spans) {
+      const unitText = canonical.slice(span.start_byte, span.end_byte);
+      units.push(await finalizeLogicalUnit(span, unitText, snapshotRootResolved, inlineThreshold));
+    }
   }
 
   const id_resolve: Record<string, string> = {};
@@ -147,4 +167,48 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     id_resolve,
     skipped_tsx_paths: tsxRel,
   };
+}
+
+async function finalizeLogicalUnit(
+  span: ExtractedUnitSpan,
+  unitUtf8: string,
+  snapshotRootResolved: string,
+  inlineThresholdBytes: number,
+): Promise<LogicalUnit> {
+  const byteLen = Buffer.byteLength(unitUtf8, "utf8");
+  if (byteLen > inlineThresholdBytes) {
+    const digestHex = createHash("sha256").update(unitUtf8, "utf8").digest("hex");
+    const blob_ref = `sha256:${digestHex}`;
+    const cacheDir = getBlobCachePath(snapshotRootResolved);
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(join(cacheDir, digestHex), unitUtf8, "utf8");
+    return {
+      ...span,
+      source_text: null,
+      blob_ref,
+      blob_bytes: byteLen,
+    };
+  }
+  return {
+    ...span,
+    source_text: unitUtf8,
+    blob_ref: null,
+    blob_bytes: null,
+  };
+}
+
+/** §10 read/apply reporting: one row per externalized unit (reason `inline_threshold`). */
+export function omittedBlobsFromExternalizedUnits(snapshot: WorkspaceSnapshot): OmittedBlob[] {
+  const rows: OmittedBlob[] = [];
+  for (const u of snapshot.units) {
+    if (u.blob_ref != null && u.blob_bytes != null) {
+      rows.push({
+        ref: u.blob_ref,
+        bytes: u.blob_bytes,
+        reason: "inline_threshold",
+      });
+    }
+  }
+  rows.sort((a, b) => (a.ref === b.ref ? a.bytes - b.bytes : a.ref.localeCompare(b.ref)));
+  return rows;
 }

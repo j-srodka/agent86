@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { applyBatch } from "./apply.js";
+import { getBlobCachePath } from "./blobs.js";
 import { materializeSnapshot } from "./snapshot.js";
 
 const toolchain = "toolchain:test-apply";
@@ -166,5 +167,31 @@ describe("applyBatch", () => {
     });
     expect(report.outcome).toBe("failure");
     expect(report.entries[0]?.code).toBe("parse_error");
+  });
+
+  it("v1: blob_unavailable warning when cache file missing; replace_unit still applies from disk", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
+    const pad = "q".repeat(8200);
+    await writeFile(
+      join(dir, "huge.ts"),
+      `export function huge(): void {\n  // ${pad}\n}\n`,
+      "utf8",
+    );
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const u = snap.units[0]!;
+    expect(u.blob_ref).toBeTruthy();
+    const hex = u.blob_ref!.slice("sha256:".length);
+    await rm(join(getBlobCachePath(dir), hex));
+    const pad2 = "r".repeat(8200);
+    const newText = `function huge(): void {\n  // ${pad2}\n}\n`;
+    const report = await applyBatch({
+      snapshotRootPath: dir,
+      snapshot: snap,
+      ops: [{ op: "replace_unit", target_id: u.id, new_text: newText }],
+      toolchainFingerprintAtApply: toolchain,
+    });
+    expect(report.outcome).toBe("success");
+    expect(report.entries.some((e) => e.code === "blob_unavailable")).toBe(true);
+    expect(report.omitted_due_to_size.some((o) => o.reason === "unavailable")).toBe(true);
   });
 });

@@ -1,7 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
+import { getBlobCachePath } from "./blobs.js";
 import { getGeneratedAllowlistPolicy } from "./policies.js";
 import { materializeSnapshot } from "./snapshot.js";
 import { buildWorkspaceSummary } from "./summary.js";
@@ -18,6 +19,8 @@ describe("buildWorkspaceSummary (Task 4)", () => {
     expect(summary.max_batch_ops).toBe(snap.adapter.max_batch_ops);
     expect(summary.manifest_url).toBeNull();
     expect(summary.policies.generated_allowlist_insufficient_assertions).toBe("error");
+    expect(summary.blob_cache_path).toBe(getBlobCachePath(resolve(dir)));
+    expect(summary.omitted_due_to_size).toEqual([]);
     const json = JSON.parse(JSON.stringify(summary)) as WorkspaceSummary;
     expect(json.manifest_url).toBeNull();
     expect(json.policies.generated_allowlist_insufficient_assertions).toBe("error");
@@ -39,6 +42,8 @@ describe("buildWorkspaceSummary (Task 4)", () => {
       max_batch_ops: 50,
       manifest_url: null,
       policies: {},
+      blob_cache_path: "/x/.cache/blobs",
+      omitted_due_to_size: [],
     } as WorkspaceSummary;
     expect(getGeneratedAllowlistPolicy(legacy)).toBe("error");
   });

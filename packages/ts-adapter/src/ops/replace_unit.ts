@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { materializeSnapshot, canonicalizeSourceForSnapshot } from "../snapshot.js";
+import { materializeSnapshot, canonicalizeSourceForSnapshot, type MaterializeSnapshotOptions } from "../snapshot.js";
 import { parseTypeScriptSource } from "../parser.js";
 import type { LogicalUnit, WorkspaceSnapshot } from "../types.js";
 
@@ -9,6 +9,8 @@ export interface ReplaceUnitInput {
   snapshotRootPath: string;
   unit: LogicalUnit;
   newText: string;
+  /** Forwarded to `materializeSnapshot` after the edit (§10 threshold). */
+  materialize?: Pick<MaterializeSnapshotOptions, "inline_threshold_bytes">;
 }
 
 export interface ReplaceUnitOk {
@@ -45,6 +47,9 @@ export async function applyReplaceUnit(input: ReplaceUnitInput): Promise<Replace
     return { ok: false, message: "parse_error after replace_unit splice" };
   }
   await writeFile(abs, nextSource, "utf8");
-  const nextSnapshot = await materializeSnapshot({ rootPath: snapshotRootPath });
+  const nextSnapshot = await materializeSnapshot({
+    rootPath: snapshotRootPath,
+    ...input.materialize,
+  });
   return { ok: true, nextSnapshot };
 }
