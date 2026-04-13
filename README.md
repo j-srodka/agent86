@@ -10,7 +10,7 @@ Agents editing code today still lean on brittle **line-number** references, get 
 
 ## What this is
 
-A small **Agent IR** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see the spec’s validation code table). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
+A small **Agent86** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see the spec’s validation code table). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
 
 **What it is not:**
 

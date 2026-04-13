@@ -1,6 +1,6 @@
 # v0 implementation decisions
 
-Implementation-time choices for the Agent IR v0 reference stack (per [implementation plan](../superpowers/plans/2026-04-12-agent-ir-v0-implementation.md)). The product spec remains locked; this file is the normative log for repo-specific behavior.
+Implementation-time choices for the Agent86 v0 reference stack (per [implementation plan](../superpowers/plans/2026-04-12-agent-ir-v0-implementation.md)). The product spec remains locked; this file is the normative log for repo-specific behavior.
 
 ## Grammar digest (v0, normative for this repo)
 

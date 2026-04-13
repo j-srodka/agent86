@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-A **prototype** of a **portable Agent IR** for agent-to-tool and agent-to-agent editing: snapshots, Tier I addressing, validated ops, structured **`ValidationReport`**, TypeScript reference adapter (Tree-sitter), conformance goldens, and an A/B harness.
+A **prototype** of **portable Agent86** for agent-to-tool and agent-to-agent editing: snapshots, Tier I addressing, validated ops, structured **`ValidationReport`**, TypeScript reference adapter (Tree-sitter), conformance goldens, and an A/B harness.
 
 ## Read first
 

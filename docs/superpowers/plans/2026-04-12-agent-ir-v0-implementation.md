@@ -1,4 +1,4 @@
-# Agent IR v0 — TypeScript Reference Adapter, Conformance, and A/B Harness
+# Agent86 v0 — TypeScript Reference Adapter, Conformance, and A/B Harness
 
 > **For agentic workers:** Use subagent-driven-development or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

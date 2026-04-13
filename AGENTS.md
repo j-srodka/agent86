@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository prototypes a **portable Agent IR** (interchange representation) for **agent-to-tool** and **agent-to-agent** editing workflows: snapshots, stable addressing within a snapshot, validated ops, and structured **`ValidationReport`** outcomes aligned with the locked v0 spec.
+This repository prototypes **portable Agent86** (interchange representation) for **agent-to-tool** and **agent-to-agent** editing workflows: snapshots, stable addressing within a snapshot, validated ops, and structured **`ValidationReport`** outcomes aligned with the locked v0 spec.
 
 Agents working here implement the **reference TypeScript adapter** (Tree-sitter), **conformance goldens**, and an **A/B measurement harness** per the active implementation plan.
 

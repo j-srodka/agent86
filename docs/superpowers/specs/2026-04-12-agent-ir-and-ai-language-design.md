@@ -1,4 +1,6 @@
-# Agent IR and AI-Oriented Language — Design Spec
+# Agent86 and AI-Oriented Language — Design Spec
+
+> This project is also known as **Agent86**.
 
 **Status:** Draft for review  
 **Date:** 2026-04-12  
@@ -6,7 +8,7 @@
 
 ## 1. Summary
 
-This initiative defines a **small, portable Agent IR**: a versioned interchange for **what agents read, what they propose as edits, and what they get back** from tooling. The IR is the **spine**. An optional **AI-oriented surface language** (or token-efficient skin) is **out of scope for v0** except as a roadmap note; v0 optimizes **reliability, predictable context use, and validation semantics** over syntax novelty.
+This initiative defines a **small, portable Agent86** interchange: a versioned interchange for **what agents read, what they propose as edits, and what they get back** from tooling. The IR is the **spine**. An optional **AI-oriented surface language** (or token-efficient skin) is **out of scope for v0** except as a roadmap note; v0 optimizes **reliability, predictable context use, and validation semantics** over syntax novelty.
 
 The problem being solved is not “parsing exists,” but **fragmented, ambiguous agent↔tool contracts**: brittle line-based edits, silent span drift, unbounded context, and prose-only failures that are hard to automate against.
 
