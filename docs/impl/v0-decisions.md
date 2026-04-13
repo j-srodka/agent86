@@ -423,3 +423,69 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | Low      | Supersession tests            | Ghost chain tests need `move_unit`                                                                                                                                                                                     | 8              |
 
 
+## Ghost-bytes report fields (v1)
+
+**Date (normative for this repo):** 2026-04-13
+
+This section closes the Medium-priority gap **Ghost-bytes report fields** from the v1 gap table (spec section 5.1, pass 2). Fields are attached to `ValidationEntry` records on the apply path; see **Formatter pinning (v1)** for `format_drift`.
+
+### `export_surface_delta`
+
+**Severity of meaning:** Informational attachment on success-path entries; not a substitute for the separate **`surface_changed`** warning code (spec §12.1), which remains **not emitted** in v1 — that pass-2 warning is deferred until a later release ties digest deltas to explicit `surface_changed` emission.
+
+**Values:** `"unchanged"` \| `"changed"` \| `"unknown"`.
+
+**Algorithm (reference adapter, v1):** After a successful op that mutates source, compare a **pre-op** and **post-op** digest of the **exported value surface** for each primary edited file (see below). If digests are equal → `"unchanged"`; if unequal → `"changed"`. If the Tree-sitter parse used for extraction has errors, or surface extraction throws → `"unknown"`.
+
+**Digest:** SHA-256 (lowercase hex) of the UTF-8 encoding of **sorted unique exported declaration names** joined by U+000A (`\n`), with no trailing newline after the last name. Names are collected only from the Tree-sitter parse of canonical LF source — **no TypeScript compiler API** (no `tsc`) in v1.
+
+**What counts as an exported name (approximation):** Walk **top-level** `export_statement` nodes in the program. Skip re-exports (`export … from '…'`). For `export_clause` without `from`, use each `export_specifier`’s **exported** identifier (the last identifier for `foo as bar`). For inline exports (`export function` / `export class` / `export const` / `export enum` / `export namespace` / `export default` with a named declaration), collect the declaration’s exported binding name. **omit** type-only exports (`export type`, `export interface`, and type-only positions). This is a **best-effort syntactic surface**, not module-resolution–aware export graph semantics; **barrel re-exports and `export *` are out of scope for v1** (documented limitation).
+
+**Multi-file ops:** For `rename_symbol` with `cross_file: true`, the adapter compares the **declaration file’s** surface before and after the op (the file containing the renamed declaration). For `move_unit`, if either source or destination **tracked** `.ts` path’s surface digest changes, the reported delta for that step is `"changed"`.
+
+### `coverage_hint`
+
+**v1:** Always **`{ "covered": null, "coverage_source": null }`** on every `ValidationEntry` produced by `applyBatch` (typed nulls — **not** field absence). **V8/Istanbul** (or any runtime coverage) integration is **out of scope** for v1; the field exists so agents and conformance can rely on a stable wire shape and future wiring without a schema bump.
+
+### `declaration_peers_unpatched`
+
+**v1:** After resolving the target unit’s **`file_path`**, compute the **same-directory** peer path **`basename.d.ts`** where `basename` is the edited file’s basename **without** the **`.ts`** extension (e.g. `src/foo.ts` → `src/foo.d.ts`). If **`WorkspaceSnapshot.files`** contains that path, set **`declaration_peers_unpatched`** to the sorted list of **all `LogicalUnit.id`** values for units whose **`file_path`** equals that peer path (order: ascending by `unit_id` string). If the peer file is **not** in the snapshot, set **`[]`**. **Never omit** the field.
+
+**Cross-directory or multiple declaration peers** (e.g. `types` packages, composite projects) are **out of scope for v1** — only the single same-directory **`basename.d.ts`** rule above.
+
+---
+
+## Formatter pinning (v1)
+
+**Date (normative for this repo):** 2026-04-13
+
+This section closes the Medium-priority gap **Formatter pinning** from the v1 gap table (spec section 7 vs §12.1 `format_drift`).
+
+### Baseline canonicalization (unchanged)
+
+Snapshot and apply paths still normalize to **LF** only (`\r\n` / `\r` → `\n`) before hash and parse, per **Canonical bytes and line endings** above. That remains the **default** formatter profile behavior.
+
+### Manifest field
+
+Optional object on **`agent-ir.manifest.json`**:
+
+```json
+"formatter": { "profile": "lf-only" }
+```
+
+or `"profile": "prettier"`. **Default** when the manifest is missing, invalid as JSON (lenient read), or **`formatter` / `profile` is absent:** **`"lf-only"`** — matches historical behavior.
+
+### `format_drift` severity and behavior (reference adapter)
+
+The locked spec §12.1 lists `format_drift` as **E** in the portable table; **this repo’s reference adapter treats `format_drift` as a **warning** in v1** when the configured profile detects drift — the batch **still succeeds** (no hard reject). Rationale: v1 does not run a full pinned formatter binary; emitting **warning**-level drift preserves auditability without blocking edits under partial formatter integration.
+
+**`lf-only` profile:** Drift is detected if post-canonicalization source still contains **`\\r\\n`** or standalone **`\\r`** (internal consistency / unexpected bytes). If so, emit one **`format_drift`** warning entry per affected check (see apply implementation). Normal LF-only content after canonicalization does **not** drift.
+
+**`prettier` profile (v1 stub):** The adapter **does not** invoke the Prettier CLI or API. **`checkFormatDrift`** does not report byte drift; it returns a documented **non-drift** result with reason **`prettier_not_wired_v1`** so callers can tell the profile is active but not enforced. A **`lang.*` info-level entry** may document that Prettier integration is pending — exact code left to implementation; **no silent success** when operators explicitly select `prettier`.
+
+### Known limitations (v1)
+
+- **Prettier binary / library integration** is **not** wired; **`prettier`** profile is explicitly stubbed as above.
+- **`format_drift` as error (spec table E)** is **not** implemented for v1 in this repo; consumers that require reject-on-drift must enforce policy outside the adapter or wait for a future version that runs a pinned formatter and upgrades severity.
+
+
