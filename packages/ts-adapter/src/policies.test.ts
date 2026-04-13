@@ -34,6 +34,8 @@ describe("getGeneratedAllowlistPolicy", () => {
       policies: { generated_allowlist_insufficient_assertions: "warning" },
       blob_cache_path: "/tmp/.cache/blobs",
       omitted_due_to_size: [],
+      manifest_strict: false,
+      manifest_warnings: [],
     };
     expect(getGeneratedAllowlistPolicy(summary)).toBe("warning");
   });
@@ -49,6 +51,8 @@ describe("getGeneratedAllowlistPolicy", () => {
       policies: {},
       blob_cache_path: "/tmp/.cache/blobs",
       omitted_due_to_size: [],
+      manifest_strict: false,
+      manifest_warnings: [],
     };
     expect(getGeneratedAllowlistPolicy(summary)).toBe("error");
   });

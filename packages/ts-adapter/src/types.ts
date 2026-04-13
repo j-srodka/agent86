@@ -153,6 +153,16 @@ export interface WorkspaceSummary {
    * Always present on the wire, including **`[]`** when nothing was externalized — never omit the field.
    */
   omitted_due_to_size: OmittedBlob[];
+  /**
+   * `true` when this summary was built with `buildWorkspaceSummary(..., { strictManifest: true })`.
+   * Default `false` preserves v0 lenient manifest parsing for existing callers.
+   */
+  manifest_strict: boolean;
+  /**
+   * Strict-mode manifest parse diagnostics. Always present on the wire, including **`[]`** when there are no issues.
+   * A missing field must not be interpreted as “no warnings” — absence is not equivalent to an empty array.
+   */
+  manifest_warnings: ValidationEntry[];
 }
 
 export interface SnapshotFile {
