@@ -1,3 +1,4 @@
+import { ghostUnknownPeers } from "./ghost_bytes.js";
 import type {
   AdapterFingerprint,
   OmittedBlob,
@@ -83,5 +84,6 @@ export function stubAllowlistWithoutGeneratorAwarenessEntry(input: {
     check_scope: "file",
     confidence: "canonical",
     evidence: null,
+    ...ghostUnknownPeers(),
   };
 }

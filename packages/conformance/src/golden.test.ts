@@ -891,3 +891,158 @@ describe("v1 — manifest strict mode (read path)", () => {
     }
   });
 });
+
+describe("v1 — ghost-bytes fields + formatter pinning (spec 5.1, 7)", () => {
+  function expectGhostBytesOnEntries(report: ValidationReport) {
+    for (const e of report.entries) {
+      expect(e.coverage_hint).toEqual({ covered: null, coverage_source: null });
+      expect(e.export_surface_delta === "unchanged" || e.export_surface_delta === "changed" || e.export_surface_delta === "unknown").toBe(
+        true,
+      );
+      expect(Array.isArray(e.declaration_peers_unpatched)).toBe(true);
+    }
+  }
+
+  it("export_surface_delta: body-only replace leaves exported names unchanged", async () => {
+    const root = await copyFixtureToTemp("export_surface_unchanged.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const units = snap.units
+        .filter((u) => u.file_path === "export_surface_unchanged.ts")
+        .slice()
+        .sort((a, b) => a.start_byte - b.start_byte);
+      expect(units.length).toBe(2);
+      const alpha = units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: alpha.id,
+            new_text: `function alpha(): number {\n  return 99;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      expectGhostBytesOnEntries(report);
+      const info = report.entries.find((e) => e.code === "parse_scope_file" && e.op_index === 0);
+      expect(info?.export_surface_delta).toBe("unchanged");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("export_surface_delta: renaming exported declaration changes surface digest", async () => {
+    const root = await copyFixtureToTemp("export_surface_changed.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const units = snap.units
+        .filter((u) => u.file_path === "export_surface_changed.ts")
+        .slice()
+        .sort((a, b) => a.start_byte - b.start_byte);
+      const alpha = units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: alpha.id,
+            new_text: `function gamma(): number {\n  return 1;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      expectGhostBytesOnEntries(report);
+      const info = report.entries.find((e) => e.code === "parse_scope_file" && e.op_index === 0);
+      expect(info?.export_surface_delta).toBe("changed");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("declaration_peers_unpatched includes same-stem .d.ts unit ids when peer is tracked", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent86-peer-"));
+    try {
+      await copyFile(fixturePath("declaration_peer.ts"), join(root, "declaration_peer.ts"));
+      await copyFile(fixturePath("declaration_peer.d.ts"), join(root, "declaration_peer.d.ts"));
+      const snap = await materializeSnapshot({ rootPath: root });
+      const peerUnits = snap.units.filter((u) => u.file_path === "declaration_peer.d.ts");
+      expect(peerUnits.length).toBeGreaterThan(0);
+      const mainU = snap.units.find((u) => u.file_path === "declaration_peer.ts");
+      expect(mainU).toBeDefined();
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: mainU!.id,
+            new_text: `function mainPeer(): void {\n  return undefined;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const info = report.entries.find((e) => e.code === "parse_scope_file" && e.op_index === 0);
+      expect(info?.declaration_peers_unpatched.sort()).toEqual(peerUnits.map((u) => u.id).sort());
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rename_surface_report is present and well-formed on every successful rename_symbol", async () => {
+    const root = await copyFixtureToTemp("rename_backward_compat.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const u = snap.units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: u.id, new_name: "surfaceCheck" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const withReport = report.entries.filter((e) => e.rename_surface_report != null);
+      expect(withReport.length).toBeGreaterThan(0);
+      for (const e of withReport) {
+        const rs = e.rename_surface_report!;
+        expect(typeof rs.found).toBe("number");
+        expect(typeof rs.rewritten).toBe("number");
+        expect(Array.isArray(rs.skipped)).toBe(true);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("format_drift: lf-only profile does not emit format_drift on clean LF fixtures", async () => {
+    const root = await copyFixtureToTemp("export_surface_unchanged.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const alpha = snap.units
+        .filter((u) => u.file_path === "export_surface_unchanged.ts")
+        .slice()
+        .sort((a, b) => a.start_byte - b.start_byte)[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [
+          {
+            op: "replace_unit",
+            target_id: alpha.id,
+            new_text: `function alpha(): number {\n  return 42;\n}\n`,
+          },
+        ],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      expect(report.entries.some((e) => e.code === "format_drift")).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

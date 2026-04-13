@@ -378,11 +378,11 @@ Closing alignment pass (reference stack complete). The v0 adapter meets the **co
 
 ### Optional `ValidationReport` extensions (spec section 5.1, pass-2 / ghost-bytes)
 
-Fields such as `**export_surface_delta`**, `**coverage_hint**`, `**declaration_peers_unpatched**` remain **optional** in the spec (“implementations MAY include them”). The reference adapter does **not** emit those. `**rename_surface_report`** is **optional** in the locked spec text but **normative for this repo** on every successful `**rename_symbol`** — see **rename_symbol expansion (v1)**.
+Fields such as `**export_surface_delta`**, `**coverage_hint**`, `**declaration_peers_unpatched**` remain **optional** in the locked spec (“implementations MAY include them”). **As of v1**, the reference adapter **emits** all three on every `**applyBatch**` `**ValidationEntry**` with semantics in **Ghost-bytes report fields (v1)**. `**rename_surface_report`** is **optional** in the locked spec text but **normative for this repo** on every successful `**rename_symbol`** — see **rename_symbol expansion (v1)**.
 
 ### Formatter drift (spec section 7)
 
-v0 **canonicalization is LF line-ending normalization only** before hash and parse. There is **no pinned formatter** (e.g. Prettier profile). The normative code `**format_drift`** exists in the section 12.1 table but is **never emitted** by v0.
+v0 **canonicalization is LF line-ending normalization only** before hash and parse. **v1** adds **Formatter pinning (v1)** (manifest `**formatter.profile**`, optional `**format_drift`** warnings). Pure v0 snapshots did not use formatter profiles or emit `**format_drift**`.
 
 ### Blob / inline threshold (spec section 10)
 
@@ -400,7 +400,9 @@ The **flattened forward map** is satisfied **trivially** in v0 (identity only; n
 
 The following normative codes appear in the locked table for completeness; the **v0** adapter did not emit them on any path (stubs / future use). **As of v1 provenance**, `**illegal_target_generated`** and `**allowlist_without_generator_awareness**` are removed from this list — the reference adapter emits them when §11 conditions apply. `**snapshot_content_mismatch**` is still handled separately below — it is **not** one of these “never emitted” codes.
 
-`format_drift` · `reanchored_span` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
+`reanchored_span` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
+
+**Note (v1):** `**format_drift**` is emitted by the reference adapter as a **warning** under **Formatter pinning (v1)** (spec table severity differs — documented there).
 
 Codes **not** in this list may still be **rare** in v0 (e.g. only on specific apply failures). `**lang.*`** subcodes are modeled in types; **v0 emits none**.
 
@@ -414,8 +416,8 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | High     | Blob externalization          | **Done (v1):** `.cache/blobs/`, `inline_threshold_bytes` on `materializeSnapshot`, `omitted_due_to_size`, `blob_unavailable` on cache miss                                                                             | 10             |
 | High     | Generated provenance          | **Done (v1):** pattern `**provenance`**, `illegal_target_generated`, manifest allowlist + assertions, `WorkspaceSummary.generated_file_count`                                                                          | 11             |
 | High     | `move_unit` / `relocate_unit` | **Done (v1):** cross-file `move_unit` per **move_unit (v1)** below; `relocate_unit` still not a separate op (alias candidate for v2)                                                                                   | 4.3, 8         |
-| Medium   | Formatter pinning             | LF-only; no Prettier profile; `format_drift` never emitted                                                                                                                                                             | 7              |
-| Medium   | Ghost-bytes report fields     | `export_surface_delta`, `coverage_hint`, etc. never emitted                                                                                                                                                            | 5.1            |
+| Medium   | Formatter pinning             | **Done (v1):** manifest `**formatter.profile**` (`**lf-only`** default; `**prettier`** stub); `**format_drift`** warning on unexpected CR; see **Formatter pinning (v1)**                                                                                                                               | 7              |
+| Medium   | Ghost-bytes report fields     | **Done (v1):** `**export_surface_delta**` (Tree-sitter export-name digest), `**coverage_hint**` null placeholders, `**declaration_peers_unpatched**` (same-dir `**basename.d.ts**`); see **Ghost-bytes report fields (v1)**                                                                              | 5.1            |
 | Medium   | `rename_symbol` scope         | **Done (v1 rename expansion):** `function_declaration` + `method_definition`; optional `cross_file`; normative `rename_surface_report`; see **rename_symbol expansion (v1)**                                           | Ops            |
 | Medium   | Manifest strict mode          | **Done (v1):** opt-in `**strictManifest`** / `**readAgentIrManifest({ strict: true })**`, root-is-object check, `**lang.ts.manifest_parse_error**` on `**WorkspaceSummary.manifest_warnings**`; deeper schema deferred | 16             |
 | Low      | TSX grammar                   | `skipped_tsx_paths` only; full TSX needs separate grammar constant                                                                                                                                                     | 4.1            |
@@ -431,7 +433,7 @@ This section closes the Medium-priority gap **Ghost-bytes report fields** from t
 
 ### `export_surface_delta`
 
-**Severity of meaning:** Informational attachment on success-path entries; not a substitute for the separate **`surface_changed`** warning code (spec §12.1), which remains **not emitted** in v1 — that pass-2 warning is deferred until a later release ties digest deltas to explicit `surface_changed` emission.
+**Severity of meaning:** Informational attachment on success-path entries; not a substitute for the separate **`surface_changed`** warning code (spec section 12.1), which remains **not emitted** in v1 — that pass-2 warning is deferred until a later release ties digest deltas to explicit `surface_changed` emission (even when `export_surface_delta === "changed"`).
 
 **Values:** `"unchanged"` \| `"changed"` \| `"unknown"`.
 

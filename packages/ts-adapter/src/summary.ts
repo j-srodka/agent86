@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { getBlobCachePath } from "./blobs.js";
+import { ghostUnknownPeers } from "./ghost_bytes.js";
 import { ManifestParseError, readAgentIrManifest, resolveManifestUrl } from "./manifest.js";
 import { omittedBlobsFromExternalizedUnits } from "./snapshot.js";
 import type { ValidationEntry, WorkspaceSnapshot, WorkspaceSummary } from "./types.js";
@@ -34,6 +35,7 @@ function manifestParseWarningEntry(err: ManifestParseError): ValidationEntry {
       reason: err.reason,
       ...(err.rawError !== undefined ? { raw_error: err.rawError } : {}),
     },
+    ...ghostUnknownPeers(),
   };
 }
 

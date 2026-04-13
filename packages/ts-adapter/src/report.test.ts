@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ghostUnknownPeers } from "./ghost_bytes.js";
 import {
   buildFailureReport,
   buildSuccessReport,
@@ -32,6 +33,7 @@ describe("ValidationReport JSON round-trip", () => {
           check_scope: "file",
           confidence: "canonical",
           evidence: null,
+          ...ghostUnknownPeers(),
         },
       ],
     });
@@ -55,6 +57,7 @@ describe("ValidationReport JSON round-trip", () => {
         check_scope: "file",
         confidence: "canonical",
         evidence: { line: 2, column: 4 },
+        ...ghostUnknownPeers(),
       },
       {
         code: "grammar_mismatch",
@@ -65,6 +68,7 @@ describe("ValidationReport JSON round-trip", () => {
         check_scope: "none",
         confidence: "canonical",
         evidence: null,
+        ...ghostUnknownPeers(),
       },
       {
         code: "batch_size_exceeded",
@@ -75,6 +79,7 @@ describe("ValidationReport JSON round-trip", () => {
         check_scope: "none",
         confidence: "canonical",
         evidence: { attempted: 99, max_batch_ops: 50 },
+        ...ghostUnknownPeers(),
       },
       {
         code: "illegal_target_generated",
@@ -85,6 +90,7 @@ describe("ValidationReport JSON round-trip", () => {
         check_scope: "file",
         confidence: "canonical",
         evidence: null,
+        ...ghostUnknownPeers(),
       },
       stubAllowlistWithoutGeneratorAwarenessEntry({
         op_index: 2,
@@ -100,6 +106,7 @@ describe("ValidationReport JSON round-trip", () => {
         check_scope: "file",
         confidence: "unknown",
         evidence: null,
+        ...ghostUnknownPeers(),
       },
     ];
     const report = buildFailureReport({

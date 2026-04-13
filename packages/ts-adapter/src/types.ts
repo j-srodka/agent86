@@ -77,6 +77,12 @@ export interface RenameSurfaceReport {
   skipped: RenameSurfaceSkipped[];
 }
 
+/** v1 coverage placeholder — typed nulls until V8/Istanbul wiring (see v0-decisions.md). */
+export interface CoverageHintV1 {
+  covered: null;
+  coverage_source: null;
+}
+
 export interface ValidationEntry {
   code: ValidationEntryCode;
   severity: EntrySeverity;
@@ -87,6 +93,11 @@ export interface ValidationEntry {
   check_scope: CheckScope;
   confidence: EntryConfidence;
   evidence: Record<string, unknown> | null;
+  /** Tree-sitter export-name digest delta (v1); see v0-decisions.md — Ghost-bytes. */
+  export_surface_delta: "unchanged" | "changed" | "unknown";
+  coverage_hint: CoverageHintV1;
+  /** Same-directory `basename.d.ts` peer unit ids when present in the snapshot; else `[]`. */
+  declaration_peers_unpatched: string[];
   /** Present on `rename_symbol` success entries (`parse_scope_file` + report payload). */
   rename_surface_report?: RenameSurfaceReport;
 }

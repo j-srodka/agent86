@@ -3,7 +3,19 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { BlobNotFoundError, fetchBlobText } from "./blobs.js";
+import {
+  checkFormatDrift,
+  readFormatterProfile,
+  resolveAgentIrManifestPath,
+} from "./formatter.js";
 import { assertGrammarDigestPinned, GRAMMAR_DIGEST_V0 } from "./grammar_meta.js";
+import {
+  combineSurfaceDelta,
+  declarationPeersUnpatched,
+  ghostFields,
+  ghostUnknownPeers,
+  type GhostBytesFields,
+} from "./ghost_bytes.js";
 import { resolveOpTarget } from "./id_resolve.js";
 import { readAgentIrManifest } from "./manifest.js";
 import { applyMoveUnit } from "./ops/move_unit.js";
@@ -18,6 +30,8 @@ import {
   sha256HexOfCanonicalSource,
   V0_ADAPTER_FINGERPRINT,
 } from "./snapshot.js";
+import { exportSurfaceDelta } from "./surface.js";
+import tsLang from "tree-sitter-typescript/bindings/node/typescript.js";
 import type {
   AdapterFingerprint,
   LogicalUnit,
@@ -80,6 +94,7 @@ function entry(
   message: string,
   opIndex: number | null,
   targetId: string | null,
+  ghost: GhostBytesFields = ghostUnknownPeers(),
 ): ValidationEntry {
   return {
     code,
@@ -90,6 +105,7 @@ function entry(
     check_scope: "file",
     confidence: "canonical",
     evidence: null,
+    ...ghost,
   };
 }
 
@@ -187,6 +203,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
   }
 
   const manifest = await readAgentIrManifest(snapshotRootPath);
+  const formatterProfile = readFormatterProfile(resolveAgentIrManifestPath(snapshotRootPath));
   const allowlistPolicy = getGeneratedAllowlistPolicy(workspaceSummary?.policies ?? {});
   const allowlistAuditWarnings: ValidationEntry[] = [];
 
@@ -236,6 +253,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
               check_scope: "file",
               confidence: "canonical",
               evidence: null,
+              ...ghostUnknownPeers(),
             },
           ],
           omitted_due_to_size: omittedOnInput(),
@@ -251,6 +269,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         check_scope: "file",
         confidence: "canonical",
         evidence: null,
+        ...ghostUnknownPeers(),
       });
       continue;
     }
@@ -264,6 +283,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       check_scope: "file",
       confidence: "canonical",
       evidence: null,
+      ...ghostUnknownPeers(),
     });
   }
 
@@ -358,6 +378,13 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
   const renameSurfaceEntries: ValidationEntry[] = [];
   const fetchUnavailableOmitted: OmittedBlob[] = [];
   const blobPrefetchWarnings: ValidationEntry[] = [];
+  const formatDriftAndPrettierNotes: ValidationEntry[] = [];
+
+  async function readRelCanonical(rel: string): Promise<string> {
+    const abs = join(snapshotRootPath, ...rel.split("/"));
+    const raw = await readFile(abs, "utf8");
+    return canonicalizeSourceForSnapshot(raw);
+  }
 
   function failureOmitted(): OmittedBlob[] {
     return mergeOmitted(omittedOnInput(), fetchUnavailableOmitted);
@@ -380,6 +407,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           check_scope: "none",
           confidence: "canonical",
           evidence: { blob_ref: unit.blob_ref },
+          ...ghostUnknownPeers(),
         });
         if (unit.blob_bytes != null) {
           fetchUnavailableOmitted.push({
@@ -408,6 +436,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         check_scope: "file",
         confidence: "canonical",
         evidence: { resolved_to: r.resolved_to },
+        ...ghostUnknownPeers(),
       };
     }
     return {
@@ -419,10 +448,12 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       check_scope: "file",
       confidence: "canonical",
       evidence: null,
+      ...ghostUnknownPeers(),
     };
   }
 
   try {
+    let prettierProfileNoted = false;
     for (let opIndex = 0; opIndex < ops.length; opIndex++) {
       const op = ops[opIndex]!;
 
@@ -448,10 +479,12 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             check_scope: "file",
             confidence: "canonical",
             evidence: { resolved_to: tr.unit.id },
+            ...ghostUnknownPeers(),
           });
         }
         const unit = tr.unit;
         await prefetchExternalizedBlob(unit, opIndex);
+        const preCanon = await readRelCanonical(unit.file_path);
         const r = await applyReplaceUnit({
           snapshotRootPath,
           unit,
@@ -469,6 +502,50 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           });
         }
         current = r.nextSnapshot;
+        const postCanon = await readRelCanonical(unit.file_path);
+        const delta = exportSurfaceDelta(preCanon, postCanon, tsLang);
+        const ghostPost = ghostFields(delta, declarationPeersUnpatched(current, unit.file_path));
+        const fmt = checkFormatDrift(postCanon, formatterProfile);
+        if (fmt.drifted) {
+          formatDriftAndPrettierNotes.push({
+            code: "format_drift",
+            severity: "warning",
+            message:
+              "[format_drift] post-edit file bytes are not LF-canonical (unexpected \\r or \\r\\n); see v0-decisions — Formatter pinning (v1).",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "file",
+            confidence: "canonical",
+            evidence: null,
+            ...ghostUnknownPeers(),
+          });
+        }
+        if (formatterProfile === "prettier" && !prettierProfileNoted) {
+          prettierProfileNoted = true;
+          formatDriftAndPrettierNotes.push({
+            code: "lang.ts.formatter_prettier_stub_v1",
+            severity: "warning",
+            message:
+              "[lang.ts.formatter_prettier_stub_v1] formatter.profile is prettier but Prettier is not wired in v1 — no format round-trip check (see v0-decisions.md).",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "none",
+            confidence: "canonical",
+            evidence: { reason: fmt.reason },
+            ...ghostUnknownPeers(),
+          });
+        }
+        formatDriftAndPrettierNotes.push({
+          code: "parse_scope_file",
+          severity: "info",
+          message: "Parse check ran on edited file only.",
+          op_index: opIndex,
+          target_id: op.target_id,
+          check_scope: "file",
+          confidence: "canonical",
+          evidence: null,
+          ...ghostPost,
+        });
         continue;
       }
 
@@ -494,10 +571,12 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             check_scope: "file",
             confidence: "canonical",
             evidence: { resolved_to: tr.unit.id },
+            ...ghostUnknownPeers(),
           });
         }
         const unit = tr.unit;
         await prefetchExternalizedBlob(unit, opIndex);
+        const preDeclCanon = await readRelCanonical(unit.file_path);
         const r = await applyRenameSymbol({
           snapshotRootPath,
           snapshot: current,
@@ -523,7 +602,40 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         current = r.nextSnapshot;
         Object.assign(mergedDelta, r.id_resolve_delta);
         const rs = r.rename_surface_report;
+        const postDeclCanon = await readRelCanonical(unit.file_path);
+        const renameDelta = exportSurfaceDelta(preDeclCanon, postDeclCanon, tsLang);
+        const renameGhost = ghostFields(renameDelta, declarationPeersUnpatched(current, unit.file_path));
         const scope: ValidationEntry["check_scope"] = op.cross_file ? "project" : "file";
+        const fmtPost = checkFormatDrift(postDeclCanon, formatterProfile);
+        if (fmtPost.drifted) {
+          formatDriftAndPrettierNotes.push({
+            code: "format_drift",
+            severity: "warning",
+            message:
+              "[format_drift] post-edit file bytes are not LF-canonical (unexpected \\r or \\r\\n); see v0-decisions — Formatter pinning (v1).",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "file",
+            confidence: "canonical",
+            evidence: null,
+            ...ghostUnknownPeers(),
+          });
+        }
+        if (formatterProfile === "prettier" && !prettierProfileNoted) {
+          prettierProfileNoted = true;
+          formatDriftAndPrettierNotes.push({
+            code: "lang.ts.formatter_prettier_stub_v1",
+            severity: "warning",
+            message:
+              "[lang.ts.formatter_prettier_stub_v1] formatter.profile is prettier but Prettier is not wired in v1 — no format round-trip check (see v0-decisions.md).",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "none",
+            confidence: "canonical",
+            evidence: { reason: fmtPost.reason },
+            ...ghostUnknownPeers(),
+          });
+        }
         renameSurfaceEntries.push({
           code: "parse_scope_file",
           severity: "info",
@@ -534,6 +646,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           confidence: "canonical",
           evidence: null,
           rename_surface_report: rs,
+          ...renameGhost,
         });
         if (op.cross_file && rs.found > CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD) {
           renameSurfaceEntries.push({
@@ -548,6 +661,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
               found: rs.found,
               threshold: CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD,
             },
+            ...ghostUnknownPeers(),
           });
         }
         if (rs.skipped.length > 0) {
@@ -561,6 +675,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             check_scope: scope,
             confidence: "canonical",
             evidence: null,
+            ...ghostUnknownPeers(),
           });
         }
         continue;
@@ -588,10 +703,19 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
             check_scope: "file",
             confidence: "canonical",
             evidence: { resolved_to: tr.unit.id },
+            ...ghostUnknownPeers(),
           });
         }
         const unit = tr.unit;
         await prefetchExternalizedBlob(unit, opIndex);
+        const destRel = posixNormalizePath(op.destination_file);
+        const preSrc = await readRelCanonical(unit.file_path);
+        let preDest = "";
+        try {
+          preDest = await readRelCanonical(destRel);
+        } catch {
+          preDest = "";
+        }
         const r = await applyMoveUnit({
           snapshotRootPath,
           snapshot: current,
@@ -616,6 +740,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
                 check_scope: "file",
                 confidence: "canonical",
                 evidence: null,
+                ...ghostUnknownPeers(),
               },
             ],
             omitted_due_to_size: failureOmitted(),
@@ -623,6 +748,55 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         }
         current = r.nextSnapshot;
         Object.assign(mergedDelta, r.id_resolve_delta);
+        const postSrc = await readRelCanonical(unit.file_path);
+        const postDest = await readRelCanonical(destRel);
+        const moveDelta = combineSurfaceDelta(
+          exportSurfaceDelta(preSrc, postSrc, tsLang),
+          exportSurfaceDelta(preDest, postDest, tsLang),
+        );
+        const moveGhost = ghostFields(moveDelta, declarationPeersUnpatched(current, unit.file_path));
+        const fmtSrc = checkFormatDrift(postSrc, formatterProfile);
+        const fmtDest = checkFormatDrift(postDest, formatterProfile);
+        if (fmtSrc.drifted || fmtDest.drifted) {
+          formatDriftAndPrettierNotes.push({
+            code: "format_drift",
+            severity: "warning",
+            message:
+              "[format_drift] post-edit file bytes are not LF-canonical after move_unit (unexpected \\r or \\r\\n).",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "file",
+            confidence: "canonical",
+            evidence: null,
+            ...ghostUnknownPeers(),
+          });
+        }
+        if (formatterProfile === "prettier" && !prettierProfileNoted) {
+          prettierProfileNoted = true;
+          formatDriftAndPrettierNotes.push({
+            code: "lang.ts.formatter_prettier_stub_v1",
+            severity: "warning",
+            message:
+              "[lang.ts.formatter_prettier_stub_v1] formatter.profile is prettier but Prettier is not wired in v1 — no format round-trip check (see v0-decisions.md).",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "none",
+            confidence: "canonical",
+            evidence: { reason: "prettier_not_wired_v1" },
+            ...ghostUnknownPeers(),
+          });
+        }
+        formatDriftAndPrettierNotes.push({
+          code: "parse_scope_file",
+          severity: "info",
+          message: "move_unit completed; parse check file scope.",
+          op_index: opIndex,
+          target_id: op.target_id,
+          check_scope: "file",
+          confidence: "canonical",
+          evidence: null,
+          ...moveGhost,
+        });
         continue;
       }
 
@@ -643,6 +817,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
     const successEntries: ValidationEntry[] = [
       ...allowlistAuditWarnings,
       ...idSupersededWarnings,
+      ...formatDriftAndPrettierNotes,
       ...renameSurfaceEntries,
     ];
     if (omittedFinal.some((o) => o.reason === "inline_threshold")) {
@@ -655,10 +830,14 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         check_scope: "none",
         confidence: "canonical",
         evidence: null,
+        ...ghostUnknownPeers(),
       });
     }
     successEntries.push(...blobPrefetchWarnings);
-    if (renameSurfaceEntries.length === 0) {
+    const hasParseScopeFile =
+      renameSurfaceEntries.some((e) => e.code === "parse_scope_file") ||
+      formatDriftAndPrettierNotes.some((e) => e.code === "parse_scope_file");
+    if (!hasParseScopeFile) {
       successEntries.push({
         code: "parse_scope_file",
         severity: "info",
@@ -668,6 +847,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         check_scope: "file",
         confidence: "canonical",
         evidence: null,
+        ...ghostUnknownPeers(),
       });
     }
 
