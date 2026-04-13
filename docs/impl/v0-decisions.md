@@ -497,3 +497,63 @@ The locked spec §12.1 lists `format_drift` as **E** in the portable table; **th
 - **`format_drift` as error (spec table E)** is **not** implemented for v1 in this repo; consumers that require reject-on-drift must enforce policy outside the adapter or wait for a future version that runs a pinned formatter and upgrades severity.
 
 
+---
+
+## Expanded benchmark (v1)
+
+**Date:** 2026-04-13
+
+### Repo selection (three repos)
+
+| Repo | Pin file | Role / diversity |
+| ---- | -------- | ---------------- |
+| **Zod** (existing) | `packages/ab-harness/.pinned-rev` | Mid-sized **TypeScript** monorepo baseline; Tree-sitter units; no change to the classic Zod harness profile. |
+| **Prettier** | `packages/ab-harness/.pinned-rev-prettier` | Large **TypeScript** ecosystem (formatter, plugins, generated output). Exercises **format_drift** / provenance / generated-file story against real layout. **Pinned:** `https://github.com/prettier/prettier` at `refs/heads/main` tip at implementation time (`git ls-remote … HEAD`). |
+| **Ruff** | `packages/ab-harness/.pinned-rev-ruff` | **Rust** repo with abundant **Python** sources; benchmark samples **`.py` files only**. **Pinned:** `https://github.com/astral-sh/ruff` at `refs/heads/main` tip at implementation time. |
+
+**Clone caches (gitignored):** `.cache/ab-target/` (Zod), `.cache/ab-prettier/`, `.cache/ab-ruff/`.
+
+**Not in this benchmark:** the tRPC demo profile remains **unchanged** (hand-authored tasks); expanded runs **Zod + Prettier + Ruff** only.
+
+### Python grammar stub (Ruff only)
+
+- **Location:** `packages/ts-adapter/src/grammars/python-stub.ts`.
+- **Behavior:** Regex-based detection of **top-level** `def` / `class` blocks (column 0); **not** Tree-sitter, **not** production quality.
+- **`grammar_digest`:** SHA-256 (hex, lowercase) of the UTF-8 source of that file **after removing** the `PYTHON_STUB_GRAMMAR_DIGEST` export block, so the pin does not recurse on the hex string. Documented as **stub** behavior; full Python adapter is **out of scope**.
+- **IR path:** Harness applies splices / scoped rename, then re-materializes stub snapshots. **Every** successful stub `ValidationReport` path is expected to carry **`parse_scope_file`** (honest file-only scope — no cross-file or parser guarantee).
+- **Logical unit kinds** for Python align with sampler vocabulary: `function_declaration` (from `def`), `class_declaration` (from `class`).
+
+### Seeded sampling
+
+- **Seed:** `42` (checked in, `BENCHMARK_SEED` in `packages/ab-harness/src/sample-tasks.ts`).
+- **PRNG:** **mulberry32** (integer seed → uniform float in `[0,1)`); no `Math.random()` / `Date.now()` in sampling.
+- **Per repo:** up to **20** tasks: **12** `replace_unit`, **8** `rename_symbol` (if fewer eligible units exist, all are used; replace/rename split keeps the 12:8 proportion via `ceil`/`floor` on the actual count).
+- **Eligible units:** Tree-sitter snapshot: `function_declaration` only (adapter does not emit top-level `class_declaration` in TS). Python stub: `function_declaration` and `class_declaration`.
+- **Shuffle:** Fisher–Yates with the seeded PRNG; deterministic for a fixed seed + pin.
+- **Rename homonym:** Resample up to **3** times per rename task to prefer a symbol whose name appears inside a **string literal or comment** (heuristic scanner for `//`, `/* */`, `#`, single/double quotes, and backticks). **`has_homonym`** recorded on `TaskDescriptor`.
+- **Artifacts:** `ab-tasks-<repo>.json` (e.g. `ab-tasks-zod.json`) next to metrics — **reproducibility record** (same seed + pin ⇒ same task list).
+
+### Baseline scripted edits
+
+- **`replace_unit`:** Naive splice at snapshot byte offsets; **30%** of replace tasks (deterministic seeded draw) use an **off-by-one** on the closing `}` (TypeScript) or truncated stub (Python) to induce **parse failures** where applicable.
+- **`rename_symbol`:** Global `\b` regex replace of the symbol in the **full file** (brittle; may hit string literals).
+
+### Metric additions
+
+- **`task_category`:** `replace_unit` \| `rename_symbol`.
+- **`repo`:** short id (`zod`, `prettier`, `ruff`).
+- **`language`:** `typescript` \| `python_stub`.
+- **`false_positive_count` (per task row):** Count of outcomes where the edit **did not** fail the cheap parse/stub check but is **semantically wrong** (e.g. baseline rename corrupted a string-literal homonym; baseline replace parsed but wrong shape). **IR path:** expected **0** everywhere; if not, treat as a harness bug.
+- **Aggregate `ci_95_lower` / `ci_95_upper`:** **Wilson score interval** (95%, \(z = 1.96\)) on **failed_patch_rate** (proportion of tasks with `failed_patches === 1`) for that **repo + approach** block. **`null`** if \(n < 10\) tasks (implementation: `wilsonCI` in `packages/ab-harness/src/stats.ts`).
+
+**Wilson formula** (for \(k\) failures in \(n\) trials, \(\hat p = k/n\)):
+
+\[
+\frac{\hat p + z^2/(2n) \pm z\sqrt{(\hat p(1-\hat p) + z^2/(4n))/n}}{1 + z^2/n}
+\]
+
+### Output
+
+- **`packages/ab-harness/ab-metrics-expanded.json`** — schema `ab-harness.expanded.v1`; per-repo `baseline` and `ir` blocks with per-task rows, aggregate rates, Wilson bounds, **`false_positive_count` sums**, and **`human_summary`** for relay to Claude.
+
+
