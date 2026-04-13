@@ -238,6 +238,8 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 - **`manifest_strict`:** **`boolean`** — **`true`** iff this summary was built with **`strictManifest: true`**; **`false`** by default (lenient).
 - **`manifest_warnings`:** **`ValidationEntry[]`** — in strict mode, parse/shape failures add **`lang.ts.manifest_parse_error`** entries here; **always present on the wire**, **`[]`** when there are no issues. Callers must not treat a **missing** field as equivalent to “no warnings” (same “never silent omission” rule as **`omitted_due_to_size`**).
 
+**Non-atomic reads (v1):** Strict mode performs two reads — URL resolution and validation — which are not atomic; v2 should unify into a single read.
+
 **`readAgentIrManifest`:** Second argument **`{ strict?: boolean }`**. Default **`false`** preserves v0. **`strict: true`** throws **`ManifestParseError`** on invalid JSON or non-object root; missing file still resolves to **`{}`** without throwing.
 
 **Rejection / report code (`lang.*` extension)**
