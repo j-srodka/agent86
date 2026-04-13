@@ -14,6 +14,7 @@ import type {
   LogicalUnit,
   OmittedBlob,
   Provenance,
+  SkippedTsParseThrow,
   SnapshotFile,
   WorkspaceSnapshot,
 } from "./types.js";
@@ -76,10 +77,12 @@ function computeSnapshotId(input: {
   files: SnapshotFile[];
   units: LogicalUnit[];
   skipped_tsx_paths: string[];
+  skipped_ts_parse_throw: SkippedTsParseThrow[];
 }): string {
   const sortedFiles = [...input.files].sort((a, b) => a.path.localeCompare(b.path));
   const sortedUnits = [...input.units].sort((a, b) => a.id.localeCompare(b.id));
   const skipped = [...input.skipped_tsx_paths].sort((a, b) => a.localeCompare(b));
+  const skippedThrow = [...input.skipped_ts_parse_throw].sort((a, b) => a.file_path.localeCompare(b.file_path));
   const payload = {
     grammar_digest: input.grammar_digest,
     adapter: {
@@ -90,6 +93,7 @@ function computeSnapshotId(input: {
     files: sortedFiles,
     units: sortedUnits,
     skipped_tsx_paths: skipped,
+    skipped_ts_parse_throw: skippedThrow,
   };
   return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
 }
@@ -142,6 +146,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
 
   const files: SnapshotFile[] = [];
   const units: LogicalUnit[] = [];
+  const skipped_ts_parse_throw: SkippedTsParseThrow[] = [];
 
   for (const rel of tsRel) {
     const abs = join(snapshotRootResolved, ...rel.split("/"));
@@ -152,6 +157,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
       tree = parseTypeScriptSource(canonical);
     } catch {
       /** Rare: tree-sitter throws on some real-world inputs; omit file from snapshot (deterministic skip). */
+      skipped_ts_parse_throw.push({ file_path: rel, reason: "parse_throw" });
       continue;
     }
     const fileSha = sha256HexOfCanonicalSource(canonical);
@@ -176,12 +182,15 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
 
   const id_resolve = mergeIdResolveFromPrevious(units, previousSnapshot?.id_resolve);
 
+  skipped_ts_parse_throw.sort((a, b) => a.file_path.localeCompare(b.file_path));
+
   const snapshot_id = computeSnapshotId({
     grammar_digest: grammarDigest,
     adapter: V0_ADAPTER_FINGERPRINT,
     files,
     units,
     skipped_tsx_paths: tsxRel,
+    skipped_ts_parse_throw,
   });
 
   return {
@@ -192,6 +201,7 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     units,
     id_resolve,
     skipped_tsx_paths: tsxRel,
+    skipped_ts_parse_throw,
   };
 }
 

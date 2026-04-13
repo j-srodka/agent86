@@ -27,6 +27,7 @@ describe("materializeSnapshot (Task 3)", () => {
     expect(a.files[0]?.provenance).toEqual({ kind: "authored" });
     expect(a.units[0]?.provenance).toEqual({ kind: "authored" });
     expect(a.skipped_tsx_paths).toEqual([]);
+    expect(a.skipped_ts_parse_throw).toEqual([]);
   });
 
   it("lists .tsx paths in skipped_tsx_paths and does not parse them as .ts", async () => {

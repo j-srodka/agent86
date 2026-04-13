@@ -7,7 +7,11 @@ export const METRICS_SCHEMA_VERSION = "ab-harness.v0";
 /** Single baseline or IR approach row (extended for demo runs). */
 export interface ApproachMetrics {
   outcome: "success" | "failure";
-  /** Machine-readable reason when outcome is failure (e.g. parse_error, string_not_found). */
+  /**
+   * Machine-readable reason when outcome is failure (e.g. `parse_error`, `string_not_found`).
+   * **`snapshot_incomplete`:** harness-only — target unit missing because the file was omitted when
+   * Tree-sitter threw during materialize; excluded from published IR rate denominators (expanded profile).
+   */
   failure_reason: string | null;
   full_file_reads: number;
   /** Read–edit–validate cycles until done or gave up (v0: typically 1). */
@@ -111,7 +115,10 @@ export interface RepoExpandedBlock {
   ci_95_upper: number | null;
 }
 
-export const METRICS_EXPANDED_SCHEMA_VERSION = "ab-harness.expanded.v1";
+/** Repo-level audit list for expanded metrics (TypeScript repos: parse-throw omissions from `materializeSnapshot`). */
+export type ExpandedRepoSkippedFile = { file_path: string; reason: "parse_throw" };
+
+export const METRICS_EXPANDED_SCHEMA_VERSION = "ab-harness.expanded.v2";
 
 export interface ExpandedMetricsFile {
   schema_version: typeof METRICS_EXPANDED_SCHEMA_VERSION;
@@ -127,6 +134,8 @@ export interface ExpandedMetricsFile {
       rev: string;
       snapshot_root: string;
       task_count: number;
+      /** Files omitted from snapshot because `parse()` threw (TS repos only; empty for python_stub). */
+      skipped_files: ExpandedRepoSkippedFile[];
       baseline: RepoExpandedBlock;
       ir: RepoExpandedBlock;
     }

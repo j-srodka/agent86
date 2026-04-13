@@ -85,7 +85,7 @@ If no rule matches: `**{ kind: "authored" }**` (no `**detected_by**`).
 
 Snapshot materialization hashes file contents **after normalizing line endings to LF** (`\n`): convert `\r\n` and standalone `\r` to `\n` before SHA-256. Paths are compared using POSIX-style relative paths sorted lexicographically for deterministic ordering.
 
-**Parse failures (v1):** If **Tree-sitter** throws while parsing a tracked `.ts` file (rare on real monorepos), that file is **omitted** from `files[]` / `units[]` for that materialization — deterministic skip, no partial snapshot row for that path.
+**Parse failures (v1):** If **Tree-sitter** throws while parsing a tracked `.ts` file (rare on real monorepos), that file is **omitted** from `files[]` / `units[]` for that materialization — deterministic skip, no partial snapshot row for that path. Each omitted path is recorded in **`WorkspaceSnapshot.skipped_ts_parse_throw`** as `{ file_path, reason: "parse_throw" }` (sorted by `file_path`) so the omission is explicit on the wire and included in **`snapshot_id`** hashing.
 
 ## TSX and non-`.ts` sources
 
@@ -554,8 +554,20 @@ The locked spec §12.1 lists `format_drift` as **E** in the portable table; **th
 \frac{\hat p + z^2/(2n) \pm z\sqrt{(\hat p(1-\hat p) + z^2/(4n))/n}}{1 + z^2/n}
 \]
 
+### `skipped_files` (repo-level audit)
+
+- **Field:** Each repo block includes **`skipped_files`**: an array of `{ "file_path": "<repo-relative POSIX>", "reason": "parse_throw" }` copied from **`WorkspaceSnapshot.skipped_ts_parse_throw`** on the TypeScript materialization path (same omission list as the adapter). **Python stub** repos use **`[]`** (no Tree-sitter `.ts` parse in that path).
+- **Purpose:** Makes parse-throw omissions **auditable** in published metrics instead of only inferring them from missing units.
+- **Rationale:** Aligns expanded benchmark transparency with the wire snapshot field without recomputing hashes in the harness.
+
+### `snapshot_incomplete` (IR-only harness classification)
+
+- **Wire:** `ApproachMetrics.failure_reason` may be **`"snapshot_incomplete"`** on the **IR** task row when the benchmark cannot resolve the sampled **`target_unit_id`** because the unit’s source file was **omitted** from the snapshot (see **parse failures** above). This is **not** an IR adapter bug or a normative **`parse_error`** from **`applyBatch`**.
+- **Aggregates:** Expanded benchmark **IR** **`failed_patch_rate`**, Wilson bounds, and **`false_positive_count`** sums **exclude** tasks whose IR row has **`failure_reason === "snapshot_incomplete"`** (denominator = tasks remaining after exclusion). Baseline aggregates are unchanged (those tasks still count as **`unit_not_found`** failures where applicable).
+- **Published results:** Do **not** treat **`snapshot_incomplete`** as evidence against the IR path — it is a **harness / materialization artifact** when a pinned monorepo hits Tree-sitter limits. **`prettier_rep_02`** is the canonical example at the Prettier pin.
+
 ### Output
 
-- **`packages/ab-harness/ab-metrics-expanded.json`** — schema `ab-harness.expanded.v1`; per-repo `baseline` and `ir` blocks with per-task rows, aggregate rates, Wilson bounds, **`false_positive_count` sums**, and **`human_summary`** for relay to Claude.
+- **`packages/ab-harness/ab-metrics-expanded.json`** — schema `ab-harness.expanded.v2`; per-repo **`skipped_files`**, **`baseline`** and **`ir`** blocks with per-task rows, aggregate rates, Wilson bounds, **`false_positive_count` sums**, and **`human_summary`** (false-positive-led) for relay to Claude.
 
 

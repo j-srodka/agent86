@@ -216,6 +216,12 @@ export interface LogicalUnit {
   blob_bytes: number | null;
 }
 
+/** `.ts` file omitted because Tree-sitter `parse()` threw; see `docs/impl/v0-decisions.md`. */
+export interface SkippedTsParseThrow {
+  file_path: string;
+  reason: "parse_throw";
+}
+
 export interface WorkspaceSnapshot {
   snapshot_id: string;
   grammar_digest: string;
@@ -226,6 +232,11 @@ export interface WorkspaceSnapshot {
   id_resolve: Record<string, string>;
   /** `.tsx` paths discovered but not parsed (v0 TS grammar only); sorted. */
   skipped_tsx_paths: string[];
+  /**
+   * `.ts` paths where parsing threw (rare); those files are omitted from `files` / `units`.
+   * Sorted by `file_path`.
+   */
+  skipped_ts_parse_throw: SkippedTsParseThrow[];
 }
 
 /** Subset referenced directly by the v0 apply path and plan gates. */

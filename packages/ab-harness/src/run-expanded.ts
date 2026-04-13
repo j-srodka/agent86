@@ -17,6 +17,7 @@ import {
   tokenCharsFromSnapshotFiles,
   type ApproachMetrics,
   type ExpandedMetricsFile,
+  type ExpandedRepoSkippedFile,
   type ExpandedTaskRow,
   type RepoExpandedBlock,
 } from "./metrics.js";
@@ -116,7 +117,7 @@ function enrichMetrics(base: ApproachMetrics, t: TaskDescriptor, fp: number): Ex
   };
 }
 
-function aggregateBlock(rows: ExpandedTaskRow[]): Omit<RepoExpandedBlock, "tasks"> {
+function aggregateBaselineBlock(rows: ExpandedTaskRow[]): Omit<RepoExpandedBlock, "tasks"> {
   const n = rows.length;
   const failed = rows.reduce((a, r) => a + r.failed_patches, 0);
   const fpSum = rows.reduce((a, r) => a + r.false_positive_count, 0);
@@ -130,19 +131,122 @@ function aggregateBlock(rows: ExpandedTaskRow[]): Omit<RepoExpandedBlock, "tasks
   };
 }
 
+/** IR aggregates exclude `snapshot_incomplete` tasks (harness artifact, not an IR patch failure). */
+function aggregateIrBlock(rows: ExpandedTaskRow[]): Omit<RepoExpandedBlock, "tasks"> {
+  const incl = rows.filter((r) => r.failure_reason !== "snapshot_incomplete");
+  const n = incl.length;
+  const failed = incl.reduce((a, r) => a + r.failed_patches, 0);
+  const fpSum = incl.reduce((a, r) => a + r.false_positive_count, 0);
+  const rate = n > 0 ? failed / n : 0;
+  const w = wilsonCI(failed, n, 1.96);
+  return {
+    failed_patch_rate: rate,
+    false_positive_count: fpSum,
+    ci_95_lower: w.lower,
+    ci_95_upper: w.upper,
+  };
+}
+
+function irMetricsUnitMissing(
+  snap: WorkspaceSnapshot,
+  t: TaskDescriptor,
+  detail: string,
+): ApproachMetrics {
+  const fileSkipped = snap.skipped_ts_parse_throw.some((s) => s.file_path === t.file_path);
+  if (fileSkipped) {
+    return approachMetrics({
+      outcome: "failure",
+      failure_reason: "snapshot_incomplete",
+      full_file_reads: snap.files.length,
+      round_trips: 1,
+      tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
+      failed_patches: 0,
+      detail: `${detail} (file omitted: tree-sitter parse threw during materialize)`,
+    });
+  }
+  return approachMetrics({
+    outcome: "failure",
+    failure_reason: "unit_not_found",
+    full_file_reads: snap.files.length,
+    round_trips: 1,
+    tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
+    failed_patches: 1,
+    detail,
+  });
+}
+
+function pct1(x: number): string {
+  return `${(x * 100).toFixed(1)}%`;
+}
+
+function wilsonPctPair(lo: number | null, hi: number | null): string {
+  if (lo == null || hi == null) {
+    return "null";
+  }
+  return `[${(lo * 100).toFixed(1)}, ${(hi * 100).toFixed(1)}]`;
+}
+
+function buildExpandedHumanSummary(input: {
+  repoOrder: string[];
+  repos: ExpandedMetricsFile["repos"];
+}): string {
+  const { repoOrder, repos } = input;
+  const nRepos = repoOrder.length;
+  const totalTasks = repoOrder.reduce((a, id) => a + (repos[id]?.task_count ?? 0), 0);
+  let irFpTotal = 0;
+  const baselineFpParts: string[] = [];
+  let baselineFpTotal = 0;
+  for (const id of repoOrder) {
+    const b = repos[id]?.baseline.false_positive_count ?? 0;
+    baselineFpTotal += b;
+    baselineFpParts.push(`${b} ${id}`);
+  }
+  for (const id of repoOrder) {
+    const rows = repos[id]?.ir.tasks ?? [];
+    const incl = rows.filter((r) => r.failure_reason !== "snapshot_incomplete");
+    irFpTotal += incl.reduce((a, r) => a + r.false_positive_count, 0);
+  }
+
+  const rateParts: string[] = [];
+  for (const id of repoOrder) {
+    const bl = repos[id]!.baseline;
+    const ir = repos[id]!.ir;
+    rateParts.push(
+      `${id} ${pct1(bl.failed_patch_rate)} vs ${pct1(ir.failed_patch_rate)} (Wilson 95% CI ${wilsonPctPair(bl.ci_95_lower, bl.ci_95_upper)} vs ${wilsonPctPair(ir.ci_95_lower, ir.ci_95_upper)})`,
+    );
+  }
+
+  let excluded = 0;
+  for (const id of repoOrder) {
+    excluded += (repos[id]?.ir.tasks ?? []).filter((r) => r.failure_reason === "snapshot_incomplete").length;
+  }
+
+  const tail =
+    excluded === 0
+      ? ""
+      : `${excluded === 1 ? "One IR task excluded" : `${excluded} IR tasks excluded`} (snapshot_incomplete harness artifact).`;
+
+  return `Expanded A/B benchmark (seed ${BENCHMARK_SEED}, ${nRepos} repos, ~${totalTasks} tasks):
+IR false positives: ${irFpTotal} across all repos and all tasks.
+Baseline false positives: ${baselineFpTotal} total (${baselineFpParts.join(", ")}) — semantically wrong edits that passed syntax checks, the silent failure mode IR is designed to prevent.
+Failed patch rates (baseline vs IR): ${rateParts.join("; ")}.${excluded > 0 ? `\n${tail}` : ""}`;
+}
+
 async function runTsRepo(input: {
   cloneRoot: string;
   repo: string;
   tasks: TaskDescriptor[];
-}): Promise<{ baseline: RepoExpandedBlock; ir: RepoExpandedBlock }> {
+}): Promise<{ baseline: RepoExpandedBlock; ir: RepoExpandedBlock; skipped_files: ExpandedRepoSkippedFile[] }> {
   const snapshotRoot = input.cloneRoot;
   const baselineRows: ExpandedTaskRow[] = [];
   const irRows: ExpandedTaskRow[] = [];
   const rngBad = mulberry32(BENCHMARK_SEED + 0xcafe);
+  let skipped_files: ExpandedRepoSkippedFile[] | undefined;
 
   for (const t of input.tasks) {
     resetGitWorkspace(snapshotRoot);
     let snap = await materializeSnapshot({ rootPath: snapshotRoot });
+    skipped_files ??= snap.skipped_ts_parse_throw.map((s) => ({ file_path: s.file_path, reason: "parse_throw" }));
     let fileSources = await readAllFileSources(snapshotRoot, snap);
     const unit = findUnit(snap, t.target_unit_id);
     if (!unit) {
@@ -156,7 +260,9 @@ async function runTsRepo(input: {
         detail: "unit missing after materialize",
       });
       baselineRows.push(enrichMetrics(fail, t, 0));
-      irRows.push(enrichMetrics(fail, t, 0));
+      irRows.push(
+        enrichMetrics(irMetricsUnitMissing(snap, t, "unit missing after materialize"), t, 0),
+      );
       continue;
     }
     const src = fileSources.get(t.file_path);
@@ -204,19 +310,7 @@ async function runTsRepo(input: {
       const uIr = findUnit(snap, t.target_unit_id);
       if (!uIr) {
         irRows.push(
-          enrichMetrics(
-            approachMetrics({
-              outcome: "failure",
-              failure_reason: "unit_not_found",
-              full_file_reads: snap.files.length,
-              round_trips: 1,
-              tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
-              failed_patches: 1,
-              detail: "unit missing before IR replace",
-            }),
-            t,
-            0,
-          ),
+          enrichMetrics(irMetricsUnitMissing(snap, t, "unit missing before IR replace"), t, 0),
         );
         continue;
       }
@@ -291,19 +385,7 @@ async function runTsRepo(input: {
       const u2 = findUnit(snap, t.target_unit_id);
       if (!u2) {
         irRows.push(
-          enrichMetrics(
-            approachMetrics({
-              outcome: "failure",
-              failure_reason: "unit_not_found",
-              full_file_reads: snap.files.length,
-              round_trips: 1,
-              tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
-              failed_patches: 1,
-              detail: "unit missing before IR rename",
-            }),
-            t,
-            0,
-          ),
+          enrichMetrics(irMetricsUnitMissing(snap, t, "unit missing before IR rename"), t, 0),
         );
         continue;
       }
@@ -337,8 +419,9 @@ async function runTsRepo(input: {
   }
 
   return {
-    baseline: { tasks: baselineRows, ...aggregateBlock(baselineRows) },
-    ir: { tasks: irRows, ...aggregateBlock(irRows) },
+    baseline: { tasks: baselineRows, ...aggregateBaselineBlock(baselineRows) },
+    ir: { tasks: irRows, ...aggregateIrBlock(irRows) },
+    skipped_files: skipped_files ?? [],
   };
 }
 
@@ -346,7 +429,7 @@ async function runPyRepo(input: {
   cloneRoot: string;
   repo: string;
   tasks: TaskDescriptor[];
-}): Promise<{ baseline: RepoExpandedBlock; ir: RepoExpandedBlock }> {
+}): Promise<{ baseline: RepoExpandedBlock; ir: RepoExpandedBlock; skipped_files: ExpandedRepoSkippedFile[] }> {
   const root = input.cloneRoot;
   const baselineRows: ExpandedTaskRow[] = [];
   const irRows: ExpandedTaskRow[] = [];
@@ -555,8 +638,9 @@ async function runPyRepo(input: {
   }
 
   return {
-    baseline: { tasks: baselineRows, ...aggregateBlock(baselineRows) },
-    ir: { tasks: irRows, ...aggregateBlock(irRows) },
+    baseline: { tasks: baselineRows, ...aggregateBaselineBlock(baselineRows) },
+    ir: { tasks: irRows, ...aggregateIrBlock(irRows) },
+    skipped_files: [],
   };
 }
 
@@ -570,47 +654,44 @@ export async function runExpandedBenchmark(input: {
   outDir: string;
 }): Promise<ExpandedRunResult> {
   const repos: ExpandedRunResult["repos"] = {};
-  const lines: string[] = [];
+  const repoOrder: string[] = [];
 
   for (const r of input.repos) {
+    repoOrder.push(r.id);
     let tasks: TaskDescriptor[];
     if (r.language === "typescript") {
       const snap = await materializeSnapshot({ rootPath: r.cloneRoot });
       const fileSources = await readAllFileSources(r.cloneRoot, snap);
       tasks = sampleTasksFromTsSnapshot(snap, fileSources, { repo: r.id, language: "typescript" });
       await writeTaskListJson(join(input.outDir, `ab-tasks-${r.id}.json`), tasks);
-      const { baseline, ir } = await runTsRepo({ cloneRoot: r.cloneRoot, repo: r.id, tasks });
+      const { baseline, ir, skipped_files } = await runTsRepo({ cloneRoot: r.cloneRoot, repo: r.id, tasks });
       repos[r.id] = {
         url: r.url,
         rev: r.rev,
         snapshot_root: r.cloneRoot,
         task_count: tasks.length,
+        skipped_files,
         baseline,
         ir,
       };
-      lines.push(
-        `${r.id} (TS): ${tasks.length} tasks — baseline failed_patch_rate=${baseline.failed_patch_rate.toFixed(3)} IR=${ir.failed_patch_rate.toFixed(3)}; baseline FP sum=${baseline.false_positive_count} IR FP sum=${ir.false_positive_count}.`,
-      );
     } else {
       const snapWrap = await materializePythonStubSnapshot(r.cloneRoot);
       tasks = sampleTasksFromPythonSnapshot(snapWrap, { repo: r.id, language: "python_stub" });
       await writeTaskListJson(join(input.outDir, `ab-tasks-${r.id}.json`), tasks);
-      const { baseline, ir } = await runPyRepo({ cloneRoot: r.cloneRoot, repo: r.id, tasks });
+      const { baseline, ir, skipped_files } = await runPyRepo({ cloneRoot: r.cloneRoot, repo: r.id, tasks });
       repos[r.id] = {
         url: r.url,
         rev: r.rev,
         snapshot_root: r.cloneRoot,
         task_count: tasks.length,
+        skipped_files,
         baseline,
         ir,
       };
-      lines.push(
-        `${r.id} (python stub): ${tasks.length} tasks — baseline failed_patch_rate=${baseline.failed_patch_rate.toFixed(3)} IR=${ir.failed_patch_rate.toFixed(3)}; baseline FP sum=${baseline.false_positive_count} IR FP sum=${ir.false_positive_count}.`,
-      );
     }
   }
 
-  const human_summary = `Expanded A/B benchmark (seed ${BENCHMARK_SEED}): ${lines.join(" ")} IR false_positive_count totals should be 0; Wilson 95% on failed_patch_rate is null only when a repo has fewer than 10 tasks (see per-repo ci fields).`;
+  const human_summary = buildExpandedHumanSummary({ repoOrder, repos });
 
   return { repos, human_summary };
 }

@@ -65,6 +65,7 @@ function computeSnapshotId(input: {
     files: sortedFiles,
     units: sortedUnits,
     skipped_tsx_paths: [] as string[],
+    skipped_ts_parse_throw: [] as { file_path: string; reason: "parse_throw" }[],
   };
   return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
 }
@@ -132,6 +133,7 @@ export async function materializePythonStubSnapshot(rootPath: string): Promise<P
     units,
     id_resolve: Object.fromEntries(units.map((u) => [u.id, u.id])),
     skipped_tsx_paths: [],
+    skipped_ts_parse_throw: [],
   };
 
   return { snapshot, fileSources, stubUnits };
