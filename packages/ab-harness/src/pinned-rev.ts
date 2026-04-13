@@ -20,3 +20,11 @@ export async function readPinnedRev(): Promise<string> {
 export async function readPinnedRevTrpc(): Promise<string> {
   return readShaFile(".pinned-rev-trpc");
 }
+
+export async function readPinnedRevPrettier(): Promise<string> {
+  return readShaFile(".pinned-rev-prettier");
+}
+
+export async function readPinnedRevRuff(): Promise<string> {
+  return readShaFile(".pinned-rev-ruff");
+}

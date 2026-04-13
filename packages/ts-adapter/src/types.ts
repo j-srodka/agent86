@@ -192,7 +192,7 @@ export interface ExtractedUnitSpan {
   file_path: string;
   start_byte: number;
   end_byte: number;
-  kind: "function_declaration" | "method_definition";
+  kind: "function_declaration" | "method_definition" | "class_declaration";
 }
 
 /**
@@ -205,7 +205,7 @@ export interface LogicalUnit {
   file_path: string;
   start_byte: number;
   end_byte: number;
-  kind: "function_declaration" | "method_definition";
+  kind: "function_declaration" | "method_definition" | "class_declaration";
   /** Inherited from the containing file’s `SnapshotFile.provenance`. */
   provenance: Provenance;
   /** Present when the unit span is inlined (UTF-8); null when externalized. */

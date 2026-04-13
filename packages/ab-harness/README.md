@@ -83,3 +83,14 @@ pnpm --filter ab-harness start
 # or
 TARGET_REPO_URL=https://github.com/colinhacks/zod.git TARGET_REPO_REV=<sha> pnpm --filter ab-harness start
 ```
+
+## Expanded profile (`--profile expanded`)
+
+Multi-repo, reproducible benchmark: **Zod**, **Prettier**, and **Ruff** at pinned SHAs (`.pinned-rev`, `.pinned-rev-prettier`, `.pinned-rev-ruff`), **seed 42**, 20 sampled tasks per repo (12× `replace_unit`, 8× `rename_symbol`), baseline vs IR metrics with Wilson 95% intervals and `false_positive_count`. Clones use **`.cache/ab-target/`**, **`.cache/ab-prettier/`**, **`.cache/ab-ruff/`** (gitignored).
+
+```bash
+pnpm ab:bench:expanded
+# or: AB_PROFILE=expanded pnpm --filter ab-harness start
+```
+
+Outputs **`packages/ab-harness/ab-metrics-expanded.json`** (and **`ab-tasks-<repo>.json`** per repo). See **`docs/impl/v0-decisions.md`** (Expanded benchmark section) for design, digest pins, and metric definitions.

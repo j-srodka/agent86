@@ -94,3 +94,46 @@ export function approachMetrics(input: {
 export async function writeMetrics(path: string, data: AbMetricsFile): Promise<void> {
   await writeFile(path, JSON.stringify(data, null, 2) + "\n", "utf8");
 }
+
+export type ExpandedTaskRow = ApproachMetrics & {
+  task_id: string;
+  task_category: "replace_unit" | "rename_symbol";
+  repo: string;
+  language: "typescript" | "python_stub";
+  false_positive_count: number;
+};
+
+export interface RepoExpandedBlock {
+  tasks: ExpandedTaskRow[];
+  failed_patch_rate: number;
+  false_positive_count: number;
+  ci_95_lower: number | null;
+  ci_95_upper: number | null;
+}
+
+export const METRICS_EXPANDED_SCHEMA_VERSION = "ab-harness.expanded.v1";
+
+export interface ExpandedMetricsFile {
+  schema_version: typeof METRICS_EXPANDED_SCHEMA_VERSION;
+  adapter_fingerprint: AdapterFingerprint;
+  grammar_digest: string;
+  /** Regex Python stub pin (see `packages/ts-adapter/src/grammars/python-stub.ts`). */
+  python_stub_grammar_digest: string;
+  seed: number;
+  repos: Record<
+    string,
+    {
+      url: string;
+      rev: string;
+      snapshot_root: string;
+      task_count: number;
+      baseline: RepoExpandedBlock;
+      ir: RepoExpandedBlock;
+    }
+  >;
+  human_summary: string;
+}
+
+export async function writeExpandedMetrics(path: string, data: ExpandedMetricsFile): Promise<void> {
+  await writeFile(path, JSON.stringify(data, null, 2) + "\n", "utf8");
+}

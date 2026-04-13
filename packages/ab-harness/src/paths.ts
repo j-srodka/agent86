@@ -20,6 +20,20 @@ export function trpcCacheDir(): string {
   return join(workspaceRoot(), ".cache", "ab-trpc");
 }
 
+/** Prettier OSS clone for expanded benchmark (`prettier/prettier` under this dir). */
+export function prettierCacheDir(): string {
+  return join(workspaceRoot(), ".cache", "ab-prettier");
+}
+
+/** Ruff OSS clone for expanded benchmark (`ruff/ruff` under this dir). */
+export function ruffCacheDir(): string {
+  return join(workspaceRoot(), ".cache", "ab-ruff");
+}
+
 export function defaultTrpcMetricsPath(): string {
   return join(abHarnessPackageRoot(), "ab-metrics-trpc.json");
+}
+
+export function defaultExpandedMetricsPath(): string {
+  return join(abHarnessPackageRoot(), "ab-metrics-expanded.json");
 }
