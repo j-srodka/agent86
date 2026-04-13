@@ -36,10 +36,16 @@ import { wilsonCI } from "./stats.js";
 
 const TOOLCHAIN = "toolchain:ab-harness-expanded";
 
+/**
+ * Restore the clone to a single known state before each task. Uses `reset --hard` and
+ * `clean -fdx` (not just `-fd`) so **ignored** paths are removed too — especially
+ * `<root>/.cache/blobs` from prior materializations. Without `-x`, leftover blobs / tooling
+ * artifacts can leak between tasks and make expanded runs non-reproducible.
+ */
 function resetGitWorkspace(root: string): void {
   try {
-    execFileSync("git", ["-C", root, "checkout", "--", "."], { stdio: "ignore" });
-    execFileSync("git", ["-C", root, "clean", "-fd"], { stdio: "ignore" });
+    execFileSync("git", ["-C", root, "reset", "--hard", "HEAD"], { stdio: "ignore" });
+    execFileSync("git", ["-C", root, "clean", "-fdx"], { stdio: "ignore" });
   } catch {
     /* non-git roots fall through; caller may still run */
   }
@@ -240,7 +246,12 @@ async function runTsRepo(input: {
   const snapshotRoot = input.cloneRoot;
   const baselineRows: ExpandedTaskRow[] = [];
   const irRows: ExpandedTaskRow[] = [];
-  const rngBad = mulberry32(BENCHMARK_SEED + 0xcafe);
+  /** Fixed draws per replace task — do not consume PRNG only on paths that run baseline replace (early exits must not shift the stream). */
+  const replaceTasks = input.tasks.filter((x) => x.task_category === "replace_unit");
+  const rngBaselineBrace = mulberry32(BENCHMARK_SEED + 0xcafe);
+  const badBaselineBrace = new Map(
+    replaceTasks.map((t) => [t.task_id, rngBaselineBrace() < 0.3] as const),
+  );
   let skipped_files: ExpandedRepoSkippedFile[] | undefined;
 
   for (const t of input.tasks) {
@@ -282,7 +293,7 @@ async function runTsRepo(input: {
     }
 
     if (t.task_category === "replace_unit") {
-      const bad = rngBad() < 0.3;
+      const bad = badBaselineBrace.get(t.task_id)!;
       const newText = tsReplaceNewText(unit, src, bad);
       const naive = src.slice(0, unit.start_byte) + newText + src.slice(unit.end_byte);
       const parseOk = parseTsOk(naive);
@@ -433,7 +444,11 @@ async function runPyRepo(input: {
   const root = input.cloneRoot;
   const baselineRows: ExpandedTaskRow[] = [];
   const irRows: ExpandedTaskRow[] = [];
-  const rngBad = mulberry32(BENCHMARK_SEED + 0xbabe);
+  const replaceTasksPy = input.tasks.filter((x) => x.task_category === "replace_unit");
+  const rngBaselinePy = mulberry32(BENCHMARK_SEED + 0xbabe);
+  const badBaselinePy = new Map(
+    replaceTasksPy.map((t) => [t.task_id, rngBaselinePy() < 0.3] as const),
+  );
 
   for (const t of input.tasks) {
     resetGitWorkspace(root);
@@ -471,7 +486,7 @@ async function runPyRepo(input: {
     }
 
     if (t.task_category === "replace_unit") {
-      const bad = rngBad() < 0.3;
+      const bad = badBaselinePy.get(t.task_id)!;
       const newText = pyReplaceNewText(unit, src, bad);
       const naive = src.slice(0, unit.start_byte) + newText + src.slice(unit.end_byte);
       const parseOk = pythonStubOk(t.file_path, naive, root);
@@ -660,6 +675,7 @@ export async function runExpandedBenchmark(input: {
     repoOrder.push(r.id);
     let tasks: TaskDescriptor[];
     if (r.language === "typescript") {
+      resetGitWorkspace(r.cloneRoot);
       const snap = await materializeSnapshot({ rootPath: r.cloneRoot });
       const fileSources = await readAllFileSources(r.cloneRoot, snap);
       tasks = sampleTasksFromTsSnapshot(snap, fileSources, { repo: r.id, language: "typescript" });
@@ -675,6 +691,7 @@ export async function runExpandedBenchmark(input: {
         ir,
       };
     } else {
+      resetGitWorkspace(r.cloneRoot);
       const snapWrap = await materializePythonStubSnapshot(r.cloneRoot);
       tasks = sampleTasksFromPythonSnapshot(snapWrap, { repo: r.id, language: "python_stub" });
       await writeTaskListJson(join(input.outDir, `ab-tasks-${r.id}.json`), tasks);

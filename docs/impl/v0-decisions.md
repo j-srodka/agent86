@@ -566,6 +566,11 @@ The locked spec §12.1 lists `format_drift` as **E** in the portable table; **th
 - **Aggregates:** Expanded benchmark **IR** **`failed_patch_rate`**, Wilson bounds, and **`false_positive_count`** sums **exclude** tasks whose IR row has **`failure_reason === "snapshot_incomplete"`** (denominator = tasks remaining after exclusion). Baseline aggregates are unchanged (those tasks still count as **`unit_not_found`** failures where applicable).
 - **Published results:** Do **not** treat **`snapshot_incomplete`** as evidence against the IR path — it is a **harness / materialization artifact** when a pinned monorepo hits Tree-sitter limits. **`prettier_rep_02`** is the canonical example at the Prettier pin.
 
+### Expanded benchmark determinism (v1)
+
+- **`resetGitWorkspace`:** **`git reset --hard HEAD`** then **`git clean -fdx`** on each clone root **before every task** and **once before** the initial **`materializeSnapshot` / `materializePythonStubSnapshot`** used only for **task sampling** in `runExpandedBenchmark` (so the sampled `task_id` / unit list is not affected by leftover state from a prior benchmark or manual edits). **`-x`** removes **gitignored** paths (including **`.cache/blobs`** from adapter materialization); **`clean -fd` alone** leaves those artifacts and can leak state across tasks.
+- **Baseline “bad brace” draws:** Seeded **`mulberry32`** draws for the **30%** off-by-one replace baseline are **precomputed per replace `task_id`** (fixed count per run), not consumed only when the baseline replace path runs — otherwise early **`continue`** paths shift the PRNG stream and break reproducibility.
+
 ### Output
 
 - **`packages/ab-harness/ab-metrics-expanded.json`** — schema `ab-harness.expanded.v2`; per-repo **`skipped_files`**, **`baseline`** and **`ir`** blocks with per-task rows, aggregate rates, Wilson bounds, **`false_positive_count` sums**, and **`human_summary`** (false-positive-led) for relay to Claude.
