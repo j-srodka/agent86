@@ -1,0 +1,193 @@
+{
+  "seed": 42,
+  "tasks": [
+    {
+      "task_id": "prettier_rep_00",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "1a78708eab3a41f51dcaa641a295e34150455e891332e65126d699b11dd92115",
+      "file_path": "tests/format/typescript/comments/15707.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_01",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "fdf65fadbb343d4015cfef1f4d4ca55ce76d9395cf36f9cad9dcfbe554def9ab",
+      "file_path": "tests/format/typescript/custom/stability/moduleBlock.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_02",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "7a26640a8109844f0763d8f668126b9a9a1c439928888d21cf758fd032cc28bf",
+      "file_path": "tests/format/typescript/type-parameters-arguments/const.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_03",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "091f0a10b5da1dde9ba7116a65a3c93116598dd7cb2fe0f273ca9d9948ce7a65",
+      "file_path": "tests/format/typescript/chain-expression/issue-15785-1.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_04",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "60db875df57dd003afee7d8e75f55684173b169dd7a9bbff37a13c7dffe19b78",
+      "file_path": "tests/format/typescript/conformance/types/union/unionTypeCallSignatures3.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_05",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "6857ea9f482ec5331ef9fa5e36edc3569e29c05099622ab36c2ab76ae888fc25",
+      "file_path": "tests/format/typescript/conformance/classes/mixinAccessModifiers.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_06",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "fe13d40725eb538bd8b43237ddc68f5ad25b605129a95b1764d63bf80b6ac2ea",
+      "file_path": "tests/format/typescript/compiler/privacyGloImport.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_07",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "15e17aae47dab8a3fa2f1d6758b5ba4f03d67927b71ccec387327acc8b9f79f5",
+      "file_path": "tests/format/typescript/conformance/classes/mixinClassesMembers.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_08",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "a61eccbedebce629f40939da250a3589c690ca3949df6ab6b53ed2bc605e25b7",
+      "file_path": "tests/format/typescript/conformance/types/tuple/typeInferenceWithTupleType.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_09",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "707efa3c3629f82a5e5d16ce0e5e6c5b2801142186ed3abace30ea81af2aecd5",
+      "file_path": "tests/format/typescript/conformance/classes/mixinClassesAnnotated.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_10",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "10d2eeaf01559725b8ff9e1b3585e752ca85072e6f77871497bb85c677b4799c",
+      "file_path": "tests/format/typescript/conformance/types/functions/functionImplementations.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_rep_11",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "replace_unit",
+      "target_unit_id": "58a49c79b787b0828d63365d598ec1292322a5aef4fc9b20083d3be1350ee456",
+      "file_path": "tests/format/typescript/function/single_expand.ts",
+      "has_homonym": false
+    },
+    {
+      "task_id": "prettier_ren_12",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "1838639662276ed037dacfd8f2400301c15fc9b9c8fb90eb48cabef080a02460",
+      "file_path": "tests/format/typescript/conformance/types/typeParameters/typeParameterLists/innerTypeParameterShadowingOuterOne.ts",
+      "rename_to": "renamed_prettier_ren_12",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_13",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "19aa9229b3cfd9904cc1fbec1779191b4002a07fcb97cf6136c373a7fad31046",
+      "file_path": "tests/format/typescript/conformance/types/typeParameters/typeParameterLists/innerTypeParameterShadowingOuterOne.ts",
+      "rename_to": "renamed_prettier_ren_13",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_14",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "0791f763e3cd42b15067e88682fc6cba5b2a483087f7d61d216f79316ed9dcba",
+      "file_path": "tests/format/typescript/conformance/types/functions/parameterInitializersForwardReferencing.ts",
+      "rename_to": "renamed_prettier_ren_14",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_15",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "7bf56018260d7c0b300c77bb966c21042851331ac37ee77a6ce5926b64fcc247",
+      "file_path": "tests/format/typescript/conformance/types/functions/parameterInitializersForwardReferencing.ts",
+      "rename_to": "renamed_prettier_ren_15",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_16",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "8f6c74051d7d6fd3735992113b946324e611974edc4b4a50370bc834fcfbe954",
+      "file_path": "tests/format/typescript/cast/generic-cast.ts",
+      "rename_to": "renamed_prettier_ren_16",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_17",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "00856d85d30fc7630bd1474bc5440e42a187924b28f63b7c699166c40c9399a9",
+      "file_path": "tests/format/typescript/conformance/types/functions/parameterInitializersForwardReferencing.ts",
+      "rename_to": "renamed_prettier_ren_17",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_18",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "ddd6d47578286f479051c22a3bcbdee55fb45efe9ae34a3512e5d359e11be4b0",
+      "file_path": "tests/format/typescript/conformance/types/typeParameters/typeParameterLists/innerTypeParameterShadowingOuterOne.ts",
+      "rename_to": "renamed_prettier_ren_18",
+      "has_homonym": true
+    },
+    {
+      "task_id": "prettier_ren_19",
+      "repo": "prettier",
+      "language": "typescript",
+      "task_category": "rename_symbol",
+      "target_unit_id": "72ff64623293a893065f1068066d958af6ef07189c4d50b119d2843369f161eb",
+      "file_path": "tests/format/typescript/cast/generic-cast.ts",
+      "rename_to": "renamed_prettier_ren_19",
+      "has_homonym": true
+    }
+  ]
+}

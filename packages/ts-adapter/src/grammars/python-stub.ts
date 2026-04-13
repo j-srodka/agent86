@@ -7,6 +7,16 @@
  *
  * `grammar_digest` for snapshots using this stub is the SHA-256 (hex) of the UTF-8 source
  * of this file **excluding** the `PYTHON_STUB_GRAMMAR_DIGEST` export block (so the pin is stable).
+ *
+ * **MAINTENANCE — digest constant (read before editing this file):**
+ * The hex string `PYTHON_STUB_GRAMMAR_DIGEST` below is **committed by hand**, not computed at
+ * build time. **Any** change to this file outside that export (whitespace, comments, types, or
+ * logic) changes the hash of the “stripped” bytes and **invalidates** existing stub snapshots
+ * at apply-time (`grammar_mismatch`). After **any** edit here: recompute the digest (strip the
+ * `PYTHON_STUB_GRAMMAR_DIGEST` export block from the file text, SHA-256 the remainder, lowercase
+ * hex), update the constant, commit together with your change, and note it in `v0-decisions.md`
+ * if the benchmark pin meaningfully moved. Skipping this step breaks cross-machine reproducibility
+ * and produces confusing benchmark failures that look like IR bugs.
  */
 
 import { createHash } from "node:crypto";
@@ -29,10 +39,11 @@ function sha256Hex(utf8: string): string {
 }
 
 /**
- * SHA-256 (hex) of this file’s UTF-8 bytes with this block removed — update when stub logic changes.
+ * **Checked-in constant only** — do not compute at runtime or in a build step.
+ * Regenerate whenever anything above/below this export changes (see file header).
  */
 export const PYTHON_STUB_GRAMMAR_DIGEST =
-  "90658f3cc521c12f3e3d778011ea326bafccb7f8aab619d6d8e20ea2ef3a42b4";
+  "db0080b3a43c57faf93210496b42ce801bb8a8875d839bdcb47359bf5f71910d";
 
 function computeUnitId(input: {
   grammarDigest: string;

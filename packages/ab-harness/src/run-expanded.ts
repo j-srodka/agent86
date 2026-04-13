@@ -610,7 +610,7 @@ export async function runExpandedBenchmark(input: {
     }
   }
 
-  const human_summary = `Expanded A/B benchmark (seed ${BENCHMARK_SEED}): ${lines.join(" ")} IR path should show zero false-positive semantics vs baseline on rename homonyms; Wilson 95% intervals on failed_patch_rate are null when fewer than 10 tasks per repo.`;
+  const human_summary = `Expanded A/B benchmark (seed ${BENCHMARK_SEED}): ${lines.join(" ")} IR false_positive_count totals should be 0; Wilson 95% on failed_patch_rate is null only when a repo has fewer than 10 tasks (see per-repo ci fields).`;
 
   return { repos, human_summary };
 }

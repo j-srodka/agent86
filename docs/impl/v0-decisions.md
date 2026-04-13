@@ -85,6 +85,8 @@ If no rule matches: `**{ kind: "authored" }**` (no `**detected_by**`).
 
 Snapshot materialization hashes file contents **after normalizing line endings to LF** (`\n`): convert `\r\n` and standalone `\r` to `\n` before SHA-256. Paths are compared using POSIX-style relative paths sorted lexicographically for deterministic ordering.
 
+**Parse failures (v1):** If **Tree-sitter** throws while parsing a tracked `.ts` file (rare on real monorepos), that file is **omitted** from `files[]` / `units[]` for that materialization — deterministic skip, no partial snapshot row for that path.
+
 ## TSX and non-`.ts` sources
 
 `**.tsx` files are never parsed with the v0 TypeScript grammar** (that would be silently wrong). The snapshot step **does not** include them in `files[]` or `units[]`. Instead, every materialization **discovers** every `.tsx` file under the root (recursive; excluding `node_modules`) and records each path in `**WorkspaceSnapshot.skipped_tsx_paths`** (repo-relative, sorted) so the omission is **explicit on the wire**, not an invisible gap. Parsing a `.tsx` path through the `.ts` parser is forbidden.

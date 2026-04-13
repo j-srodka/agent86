@@ -147,6 +147,13 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
     const abs = join(snapshotRootResolved, ...rel.split("/"));
     const raw = await readFile(abs, "utf8");
     const canonical = canonicalizeSourceForSnapshot(raw);
+    let tree: ReturnType<typeof parseTypeScriptSource>;
+    try {
+      tree = parseTypeScriptSource(canonical);
+    } catch {
+      /** Rare: tree-sitter throws on some real-world inputs; omit file from snapshot (deterministic skip). */
+      continue;
+    }
     const fileSha = sha256HexOfCanonicalSource(canonical);
     const headerLines = firstNLines(canonical, 5);
     const provenance = detectProvenance(rel, headerLines);
@@ -156,7 +163,6 @@ export async function materializeSnapshot(options: MaterializeSnapshotOptions): 
       byte_length: Buffer.byteLength(canonical, "utf8"),
       provenance,
     });
-    const tree = parseTypeScriptSource(canonical);
     const spans = extractLogicalUnits(tree, {
       grammarDigest,
       snapshotRootResolved,
