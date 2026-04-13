@@ -470,7 +470,11 @@ describe("v1 — supersession conformance (section 8)", () => {
       expect(r0.outcome).toBe("success");
       const snapMoved = await snapshotAfterSuccessfulBatch(root, snap0, r0);
       await rm(join(root, "gone.ts"));
+      // `previousSnapshot` merges superseded-id edges into the new materialization so `id_resolve[oldId]`
+      // still points at the moved-to id after the file is gone — enabling `ghost_unit`. Without it, the
+      // adapter would see `unknown_or_superseded_id` instead (ghost detection degrades).
       const snapGhost = await materializeSnapshot({ rootPath: root, previousSnapshot: snapMoved });
+      expect(snapGhost.id_resolve[oldId]).toBeDefined();
       const r1 = await applyBatch({
         snapshotRootPath: root,
         snapshot: snapGhost,
@@ -484,7 +488,12 @@ describe("v1 — supersession conformance (section 8)", () => {
         toolchainFingerprintAtApply: toolchain,
       });
       expect(r1.outcome).toBe("failure");
-      expect(r1.entries[0]?.code).toBe("ghost_unit");
+      expect(r1.entries).toHaveLength(1);
+      const ghost = r1.entries[0]!;
+      expect(ghost.code).toBe("ghost_unit");
+      expect(ghost.severity).toBe("error");
+      expect(ghost.message).toMatch(/^\[ghost_unit\]/);
+      expect(r1.entries.some((e) => e.code === "unknown_or_superseded_id")).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -463,6 +463,10 @@ This section closes the Medium-priority gap **Ghost-bytes report fields** from t
 
 **Cross-directory or multiple declaration peers** (e.g. `types` packages, composite projects) are **out of scope for v1** — only the single same-directory **`basename.d.ts`** rule above.
 
+### `declaration_peer_unpatched` (spec section 12.1 normative code)
+
+The locked §12.1 table includes a validation **`code`** `declaration_peer_unpatched` (distinct from the **`declaration_peers_unpatched`** field name on `ValidationEntry`). **v1 does not emit** a separate report row with `code: "declaration_peer_unpatched"` — peer awareness is carried **only** via the populated **`declaration_peers_unpatched`** string array on each apply entry (possibly non-empty when a same-directory `*.d.ts` peer is tracked). Emitting the normative **code** as its own `ValidationEntry` for non-empty arrays is **deferred to v2+** unless integrators require redundant branching alongside the field.
+
 ---
 
 ## Formatter pinning (v1)
