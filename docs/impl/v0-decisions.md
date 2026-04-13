@@ -483,7 +483,13 @@ The locked spec §12.1 lists `format_drift` as **E** in the portable table; **th
 
 **`lf-only` profile:** Drift is detected if post-canonicalization source still contains **`\\r\\n`** or standalone **`\\r`** (internal consistency / unexpected bytes). If so, emit one **`format_drift`** warning entry per affected check (see apply implementation). Normal LF-only content after canonicalization does **not** drift.
 
-**`prettier` profile (v1 stub):** The adapter **does not** invoke the Prettier CLI or API. **`checkFormatDrift`** does not report byte drift; it returns a documented **non-drift** result with reason **`prettier_not_wired_v1`** so callers can tell the profile is active but not enforced. A **`lang.*` info-level entry** may document that Prettier integration is pending — exact code left to implementation; **no silent success** when operators explicitly select `prettier`.
+**`prettier` profile (v1 stub):** The adapter **does not** invoke the Prettier CLI or API. **`checkFormatDrift`** does not report byte drift; it returns a documented **non-drift** result with reason **`prettier_not_wired_v1`** so callers can tell the profile is active but not enforced. **No silent success** when operators explicitly select `prettier` — see **`lang.ts.formatter_prettier_stub_v1`** below.
+
+### `lang.*` extensions (formatter)
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| `**lang.ts.formatter_prettier_stub_v1**` | **warning** | `**formatter.profile**` is **`prettier`** but Prettier is not wired in v1 — no format round-trip check. Emitted **at most once per successful batch** (first mutating op). Evidence may include `{ reason: "prettier_not_wired_v1" }`. |
 
 ### Known limitations (v1)
 

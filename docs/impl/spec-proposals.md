@@ -20,3 +20,21 @@ Proposed amendments to the locked spec. Each entry must include: date, proposing
 | `id_superseded` | W | Op `target_id` was a superseded id; the adapter resolved it via `id_resolve` to a live unit. | Confirm the op was intended for the resolved location; branch on `code` and `evidence.resolved_to` (string). |
 
 ---
+
+## 2026-04-13 — `format_drift` severity reclassification (Cursor)
+
+**Rationale:** Section 12.1 lists `format_drift` as **E** (error) with the agent action “refresh snapshot under canonical-bytes policy.” The reference adapter (v1) may emit **`format_drift` as a warning** when formatter integration is partial (e.g. LF-only checks without a pinned Prettier round-trip), so the batch can succeed while still surfacing drift for audit. That intentionally diverges from the portable table’s **E** for this repo until the spec explicitly allows **E** vs **W** per repo policy or adapter capability.
+
+**Placement:** Section 12.1 — **Formatter and canonical bytes** table, `format_drift` row.
+
+**PROPOSED — replace the `format_drift` row (or add normative text immediately below the table):**
+
+| Code | Sev | Meaning | Agent action |
+|------|-----|---------|----------------|
+| `format_drift` | **E or W (policy)** | Formatter-only or canonicalization byte drift detected between snapshot materialization expectations and post-edit content. **Severity** is determined by **repo / adapter policy** (e.g. reject-on-drift **E** when a pinned formatter round-trip is enforced; **W** when the adapter reports drift for audit but allows the batch to succeed under partial formatter integration). | If **E**: refresh snapshot under canonical-bytes policy. If **W**: review bytes; refresh snapshot if identity guarantees require it. |
+
+**Alternative (minimal):** Keep **E** in the portable table but add a normative sentence: *Implementations MAY downgrade `format_drift` to **warning** when documented in adapter capability metadata and repo policy; agents MUST honor the entry’s declared `severity`.*
+
+**Status:** Awaiting human approval before editing the locked spec file.
+
+---

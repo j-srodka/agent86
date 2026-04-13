@@ -964,6 +964,28 @@ describe("v1 — ghost-bytes fields + formatter pinning (spec 5.1, 7)", () => {
     }
   });
 
+  it("export_surface_delta: rename_symbol on exported function marks surface changed", async () => {
+    const root = await copyFixtureToTemp("rename_backward_compat.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const u = snap.units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: u.id, new_name: "renamedExportFn" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      expectGhostBytesOnEntries(report);
+      const info = report.entries.find(
+        (e) => e.code === "parse_scope_file" && e.op_index === 0 && e.rename_surface_report != null,
+      );
+      expect(info?.export_surface_delta).toBe("changed");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("declaration_peers_unpatched includes same-stem .d.ts unit ids when peer is tracked", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent86-peer-"));
     try {
