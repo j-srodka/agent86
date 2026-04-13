@@ -159,8 +159,10 @@ export interface WorkspaceSummary {
    */
   manifest_strict: boolean;
   /**
-   * Strict-mode manifest parse diagnostics. Always present on the wire, including **`[]`** when there are no issues.
-   * A missing field must not be interpreted as “no warnings” — absence is not equivalent to an empty array.
+   * Strict-mode manifest parse diagnostics (`lang.ts.manifest_parse_error` when applicable).
+   *
+   * **Wire invariant:** Always serialize this field as an array, including **`[]`** when there are no warnings.
+   * Producers must not omit it; consumers must not treat a missing property as “no warnings” (that is ambiguous).
    */
   manifest_warnings: ValidationEntry[];
 }
