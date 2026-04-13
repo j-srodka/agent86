@@ -214,9 +214,46 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 
 **`WorkspaceSummary.manifest_url`:** If **`agent-ir.manifest.json`** exists and is a regular file, set **`manifest_url`** to its absolute **`file:`** URL (Node **`pathToFileURL(absolutePath).href`**). If the file is absent, **`manifest_url`** is **`null`**. This satisfies the standalone-locator rule: agents can open the manifest without implicit repo-root context.
 
-**Manifest body:** If the file is missing, the adapter treats the manifest as **empty** — logically **`{}`** — and performs **no network fetch**. v0 does not resolve **`https:`** or other remote URLs from the manifest; only **`file:`** (via the resolved on-disk path above) is supported for the summary field. If the file exists but contains invalid JSON, v0 returns **`{}`** for parsed content (**lenient behavior is explicit in v0**) so the read path does not throw. **v1** should add **strict JSON/schema validation** (and normative error surfacing) **before** manifest content is allowed to drive agent behavior or policy.
+**Manifest body:** If the file is missing, the adapter treats the manifest as **empty** — logically **`{}`** — and performs **no network fetch**. v0 does not resolve **`https:`** or other remote URLs from the manifest; only **`file:`** (via the resolved on-disk path above) is supported for the summary field. If the file exists but contains invalid JSON, v0 returns **`{}`** for parsed content (**lenient behavior is explicit in v0**) so the read path does not throw. **Strict mode (v1)** adds opt-in validation and **`lang.ts.manifest_parse_error`** warnings — see **Manifest strict mode (v1)** below; deeper JSON Schema for nested keys remains **v2+**.
 
 **`buildWorkspaceSummary`:** The function is **`async`**. All current in-repo call sites **`await`** it (unit tests only as of Task 11); integrators must not call it synchronously.
+
+### Manifest strict mode (v1)
+
+**Date (normative for this repo):** 2026-04-12
+
+**Purpose:** v0 **lenient** parsing (missing file → logical **`{}`**, invalid JSON or non-object root → **`{}`** on the read path) stays the **default** so existing integrations do not break. **Strict** mode is **opt-in** for callers that want machine-readable surfacing before manifest-driven policy is trusted.
+
+**Two modes**
+
+| Mode | Activation | Invalid JSON | Non-object JSON root (`[]`, `"x"`, `null`, …) | Missing `agent-ir.manifest.json` |
+| ---- | ---------- | ------------ | ---------------------------------------------- | -------------------------------- |
+| **Lenient (v0 default)** | `readAgentIrManifest(root, { strict?: false })` (default); `buildWorkspaceSummary(snapshot, root)` without strict flag | Parsed content treated as **`{}`** (unchanged v0 behavior) | **`{}`** | **`{}`**, **`manifest_url`** **`null`** |
+| **Strict (opt-in v1)** | `readAgentIrManifest(root, { strict: true })`; `buildWorkspaceSummary(snapshot, root, { strictManifest: true })` | **`ManifestParseError`** (throw from `readAgentIrManifest`); on the summary path, a **`lang.ts.manifest_parse_error`** **warning** on **`WorkspaceSummary.manifest_warnings`** (summary still returned) | Same as invalid JSON for strict **`readAgentIrManifest`** (**`reason: non_object_root`**); summary path surfaces the same **warning** | **Not an error:** parsed manifest is **`{}`**, **`manifest_url`** is **`null`**, **`manifest_warnings`** **`[]`** |
+
+**Schema validation boundary (v1 vs v2):** In strict mode, the adapter validates only that the manifest **root** is a plain **JSON object** (`{}` and object literals — not an array, string, number, boolean, or **`null`**). **Deeper** schema (required keys, types of nested values, allowlist shape, etc.) is **out of scope for v1** and remains a **v2+** concern unless specified later.
+
+**WorkspaceSummary fields**
+
+- **`manifest_strict`:** **`boolean`** — **`true`** iff this summary was built with **`strictManifest: true`**; **`false`** by default (lenient).
+- **`manifest_warnings`:** **`ValidationEntry[]`** — in strict mode, parse/shape failures add **`lang.ts.manifest_parse_error`** entries here; **always present on the wire**, **`[]`** when there are no issues. Callers must not treat a **missing** field as equivalent to “no warnings” (same “never silent omission” rule as **`omitted_due_to_size`**).
+
+**`readAgentIrManifest`:** Second argument **`{ strict?: boolean }`**. Default **`false`** preserves v0. **`strict: true`** throws **`ManifestParseError`** on invalid JSON or non-object root; missing file still resolves to **`{}`** without throwing.
+
+**Rejection / report code (`lang.*` extension)**
+
+| Code | Severity on `WorkspaceSummary` | Meaning |
+| ---- | ------------------------------ | ------- |
+| **`lang.ts.manifest_parse_error`** | **warning** | Strict manifest read failed: invalid JSON (**`reason: invalid_json`**) or root is not an object (**`reason: non_object_root`**). Not a hard apply reject; the agent decides. |
+
+**Normative message shape (reference adapter):**  
+`[lang.ts.manifest_parse_error] agent-ir.manifest.json could not be parsed: <detail> (path: <absolute path>)`
+
+**Normative evidence:** `{ path: string, reason: "invalid_json" | "non_object_root", raw_error?: string }` — **`raw_error`** present when the underlying **`JSON.parse`** failure message is available.
+
+**Apply path:** **`applyBatch`** continues to use **lenient** **`readAgentIrManifest`** (default options) so batch behavior stays aligned with v0 unless callers change that contract explicitly in a future revision.
+
+**Follow-up (v2+):** Full JSON Schema (or equivalent) validation of manifest contents beyond root-is-object.
 
 ## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`; v1: `move_unit`)
 
@@ -354,7 +391,7 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | Medium | Formatter pinning | LF-only; no Prettier profile; `format_drift` never emitted | 7 |
 | Medium | Ghost-bytes report fields | `export_surface_delta`, `coverage_hint`, etc. never emitted | 5.1 |
 | Medium | `rename_symbol` scope | **Done (v1 rename expansion):** `function_declaration` + `method_definition`; optional `cross_file`; normative `rename_surface_report`; see **rename_symbol expansion (v1)** | Ops |
-| Medium | Manifest strict mode | Lenient `{}` on invalid JSON; no schema validation | 16 |
+| Medium | Manifest strict mode | **Done (v1):** opt-in **`strictManifest`** / **`readAgentIrManifest({ strict: true })`**, root-is-object check, **`lang.ts.manifest_parse_error`** on **`WorkspaceSummary.manifest_warnings`**; deeper schema deferred | 16 |
 | Low | TSX grammar | `skipped_tsx_paths` only; full TSX needs separate grammar constant | 4.1 |
 | Low | Unemitted table codes | See “never emitted” list above (**excludes** `snapshot_content_mismatch`, emitted by §9 gate 5 v1) | 12.1 |
 | Low | Supersession tests | Ghost chain tests need `move_unit` | 8 |
