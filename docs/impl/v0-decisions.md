@@ -221,12 +221,88 @@ When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **l
 ## Op JSON shape (v0 subset: `replace_unit`, `rename_symbol`; v1: `move_unit`)
 
 - **`replace_unit`:** `{ "op": "replace_unit", "target_id": string, "new_text": string }` — replaces the **entire** logical unit span `[start_byte, end_byte)` (canonical LF source) with `new_text`, then re-parses and re-snapshots. For `export function …`, the Tree-sitter **`function_declaration`** range usually starts at the `function` keyword (the `export ` prefix sits outside that node); **`new_text`** must splice valid source for that span (often `function name() { … }` without duplicating `export`).
-- **`rename_symbol`:** `{ "op": "rename_symbol", "target_id": string, "new_name": string }` — v0 **function_declaration only**, **same file**; walks the declaration subtree and renames `identifier` nodes matching the declared name (name-independent unit **ids**; **`id_resolve_delta`** empty on success).
+- **`rename_symbol`:** `{ "op": "rename_symbol", "target_id": string, "new_name": string, "cross_file"?: boolean }` — **`cross_file`** defaults **`false`**. **`function_declaration`** and **`method_definition`**; same-file scope rules and optional cross-file identifier scan per **rename_symbol expansion (v1)**. Emits **`rename_surface_report`** on success (name-independent unit **ids**; **`id_resolve_delta`** empty on success unless combined with other ops).
 - **`move_unit` (v1):** `{ "op": "move_unit", "target_id": string, "destination_file": string, "insert_after_id"?: string }` — cross-file move of the unit’s canonical span; optional §11 workflow fields allowed. See **move_unit (v1)** above.
 
 ## `rename_symbol` scope (v0)
 
 **Same-file, `function_declaration` only** (no `method_definition`, no cross-file). Identifiers matching the old name **inside** that declaration subtree are rewritten (declaration name, calls, nested identifiers with that spelling). **`id_resolve`** does not encode symbol names — renames do **not** emit `id_resolve_delta` entries in v0.
+
+---
+
+## `rename_symbol` expansion (v1)
+
+**Date (normative for this repo):** 2026-04-12
+
+This section supersedes the bounded **rename_symbol scope (v0)** description above for the reference adapter: **`function_declaration` and `method_definition`**, optional **cross-file** best-effort reference rewriting, and a **normative `rename_surface_report`** on every successful `rename_symbol` apply.
+
+### Supported declaration kinds
+
+| Kind | Same-file behavior |
+| ---- | ------------------ |
+| **`function_declaration`** | Lexical-scope–aware rename of the declared name: walk the **entire** file AST (not only the declaration subtree). Rewrite **`identifier`** occurrences that resolve to the target binding; apply homonym / skip rules below. Do **not** rewrite **`property_identifier`** nodes for function targets (treats dotted access `obj.foo` as out of scope for this op — avoids silent reshaping of unrelated members during best-effort cross-file scans). |
+| **`method_definition`** | The declared name is the Tree-sitter **`property_identifier`** child (via `name` field), not the `function_declaration` **`identifier`** pattern. Same-file rewrites are limited to the **enclosing class body** of the target method (the `class_body` of the containing `class_declaration` / `class` expression) plus the method’s own header: **`identifier`** and **`property_identifier`** nodes matching the old name are candidates, subject to homonym rules. **Scope isolation:** another class in the same file may declare the same method name; that class’s declarations and internal references **must not** change when renaming one class’s method. |
+
+**Unsupported** Tier-I units (or future node kinds) are rejected with **`lang.ts.rename_unsupported_node_kind`** (not **`op_vocabulary_unsupported`**) when the resolved target is not a `function_declaration` or `method_definition`.
+
+### Homonym and skip rules (same file)
+
+The following **must not** be rewritten (record each in **`rename_surface_report.skipped`** with a stable **`reason`** string):
+
+- **`string_literal`** / template content: identifiers appearing only as part of string text are untouched (string literals are never traversed for identifier substitution; naive string replace would hit these — IR must not).
+- **Type positions:** `type_identifier` and identifier-like nodes in type-only positions (type annotations, type arguments) — **not** value identifiers.
+- **Property keys / member access (narrow reading):** **`property_identifier`** nodes that are **object literal** keys or **shorthand** keys in object patterns where the name is a **key**, not the method-declaration header — skipped. For **`function_declaration`**, **`property_identifier`** nodes are skipped in general (see table above). For **`method_definition`**, **`property_identifier`** nodes **inside the target class body** are rewritten when they refer to the target method (e.g. `this.m`, `other.m` within the class); keys in object literals inside that class are still skipped.
+- **Cross-scope homonyms:** Identifiers that resolve to a **different** lexical binding of the same spelling (nested `function foo`, parameters, inner declarations) are skipped with a homonym / shadowing reason.
+
+### Cross-file reference rewriting (`cross_file`)
+
+**Wire shape:** `rename_symbol` accepts an optional boolean **`cross_file`** (default **`false`** — preserves v0 behavior: only the file containing the declaration is considered).
+
+| Value | Semantics |
+| ----- | --------- |
+| **`false`** | Safe / narrow: same-file rewrite only; no other files are scanned. |
+| **`true`** | After a successful same-file rename, scan **every other** tracked `.ts` file in the snapshot (full snapshot, all `.ts` files in `WorkspaceSnapshot.files`). **Best-effort:** rewrite **`identifier`** nodes whose text equals the old name, using the same homonym skips (strings, types, property access as for functions). **No** import/export graph, **no** TypeScript checker — two modules may each export a function `get`; **both** may be rewritten. Agents **must** treat **`found` / `rewritten` / `skipped`** as **best-effort** signal, not soundness. |
+
+**Limitation (loud):** Cross-file rename **does not** prove that a matching identifier refers to the renamed symbol. Common names (**`get`**, **`id`**, **`run`**) may match many unrelated identifiers; agents should inspect **`rename_surface_report`** and prefer **`cross_file: false`** when a narrow same-file edit suffices.
+
+**Declaration move / path change** is out of scope — that is **`move_unit`**. This op only renames the **symbol spelling** in place.
+
+### `rename_surface_report` (normative for this adapter)
+
+On **every** successful **`rename_symbol`** batch step, the adapter emits a **`rename_surface_report`** attached to the corresponding **`ValidationReport.entries[]`** item (spec section 5.1 shape), **never `null`** for this opcode.
+
+Shape:
+
+```typescript
+{
+  found: number;       // candidate nodes matching old name in the applied search scope (see below)
+  rewritten: number;   // nodes actually replaced
+  skipped: Array<{
+    unit_id: string;   // the op’s target unit id (Tier I handle for the renamed declaration)
+    reason: string;    // machine-readable skip reason (homonym, type_position, string_context, …)
+    file: string;      // repo-relative POSIX path of the file containing the skipped occurrence
+  }>;
+}
+```
+
+- **`found`** counts nodes that matched the old name and were classified (rewritten or skipped), aggregated across files touched by the op (same-file only when `cross_file: false`).
+- **`skipped[].file`** is always set so agents can locate occurrences (same-file uses that file; cross-file uses each other file’s path).
+- **Best-effort:** for cross-file scans, **`skipped`** may be empty even when false positives exist — we only list **intentional** skips (homonym rules), not “unknown semantic mismatch.”
+
+### Warnings (section 12.1)
+
+- Emit **`rename_surface_skipped_refs`** (warning) when **`skipped.length > 0`** so agents are alerted without comparing counts manually.
+- **`parse_scope_file`** info entry remains; cross-file edits still do not imply project-wide semantic correctness.
+
+### Atomicity
+
+Cross-file rename may touch many files. **`applyBatch`** already backs up **all** tracked snapshot files before any mutation; extended rename **must not** write until same-file success is known, then perform cross-file rewrites, then re-snapshot. On **`parse_error`** or any failure after partial writes, **restore all** backed-up paths (same process-lifetime model as **`move_unit`**).
+
+### `lang.*` extensions (rename)
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| **`lang.ts.rename_unsupported_node_kind`** | error | Target unit’s AST node is not `function_declaration` or `method_definition` (e.g. future unit kinds). |
 
 ---
 
@@ -236,7 +312,7 @@ Closing alignment pass (reference stack complete). The v0 adapter meets the **co
 
 ### Optional `ValidationReport` extensions (spec section 5.1, pass-2 / ghost-bytes)
 
-Fields such as **`export_surface_delta`**, **`coverage_hint`**, **`declaration_peers_unpatched`**, **`rename_surface_report`** are **optional** in the spec (“implementations MAY include them”). The v0 adapter **never emits** them — correct for v0. A v1 TypeScript adapter with project-aware checking (e.g. **tsc** scope) should plan to emit at least **`export_surface_delta`** and **`coverage_hint`** where applicable.
+Fields such as **`export_surface_delta`**, **`coverage_hint`**, **`declaration_peers_unpatched`** remain **optional** in the spec (“implementations MAY include them”). The reference adapter does **not** emit those. **`rename_surface_report`** is **optional** in the locked spec text but **normative for this repo** on every successful **`rename_symbol`** — see **rename_symbol expansion (v1)**.
 
 ### Formatter drift (spec section 7)
 
@@ -273,7 +349,7 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | High | `move_unit` / `relocate_unit` | **Done (v1):** cross-file `move_unit` per **move_unit (v1)** below; `relocate_unit` still not a separate op (alias candidate for v2) | 4.3, 8 |
 | Medium | Formatter pinning | LF-only; no Prettier profile; `format_drift` never emitted | 7 |
 | Medium | Ghost-bytes report fields | `export_surface_delta`, `coverage_hint`, etc. never emitted | 5.1 |
-| Medium | `rename_symbol` scope | Same-file `function_declaration` only; no methods, no cross-file | Ops |
+| Medium | `rename_symbol` scope | **Done (v1 rename expansion):** `function_declaration` + `method_definition`; optional `cross_file`; normative `rename_surface_report`; see **rename_symbol expansion (v1)** | Ops |
 | Medium | Manifest strict mode | Lenient `{}` on invalid JSON; no schema validation | 16 |
 | Low | TSX grammar | `skipped_tsx_paths` only; full TSX needs separate grammar constant | 4.1 |
 | Low | Unemitted table codes | See “never emitted” list above (**excludes** `snapshot_content_mismatch`, emitted by §9 gate 5 v1) | 12.1 |
