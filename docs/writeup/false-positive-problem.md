@@ -6,7 +6,7 @@ Agents editing code today produce edits that look correct — no parse error, no
 
 The canonical example is a symbol rename that hits a string literal. A naive string-replacement agent asked to rename a function `validate` to `validateSchema` will also rewrite any string `"validate"` in the codebase — documentation strings, test fixture strings, map keys, error messages. The file still parses. Tests may still pass if none of them exercise the changed string path. From the pipeline's perspective, the edit succeeded. From the codebase's perspective, it silently corrupted data.
 
-This failure mode is structural, not accidental. Any agent that operates on raw text without understanding syntactic scope will produce it. It does not matter how capable the underlying model is; the edit surface itself is wrong. The problem compounds in agentic loops where each bad edit becomes the foundation for the next one.
+This failure mode is structural, not accidental. Any agent that operates on raw text without understanding syntactic scope will produce it. The problem compounds in agentic loops where each bad edit becomes the foundation for the next one.
 
 ## 2. What we built
 
@@ -16,7 +16,7 @@ agent86 is a portable op vocabulary and validation layer for agent-to-code editi
 
 We ran an A/B benchmark across three OSS repositories — Zod (TypeScript), Prettier (TypeScript), and Ruff (Python stub) — using seed-42 deterministic task sampling. Each repo received 20 tasks split between `replace_unit` and `rename_symbol` categories. The baseline condition used naive string operations (full-file reads, global string replace). The agent86 condition used IR-backed ops against materialized snapshots.
 
-One caveat up front: the Ruff tasks targeted Python stub files (`.pyi`), not full Python source. The IR operated on stubs that parse cleanly as TypeScript-adjacent structured text; this is not the same as a full Python grammar adapter. The Python results reflect stub coverage, not general Python support.
+One caveat up front: the Ruff tasks targeted Python source files processed by a regex-based unit detector, not a full tree-sitter grammar. This is a deliberate stub — enough to demonstrate the op vocabulary is language-agnostic, not a claim about production Python support.
 
 The canonical artifact is commit `e8583c92` (`packages/ab-harness/ab-metrics-expanded.json`). We verified determinism by running the benchmark three consecutive times with the same seed; all three runs produced byte-identical output.
 
@@ -34,7 +34,9 @@ Failed patch rates with Wilson 95% confidence intervals:
 | Prettier | 20.0% | 5.0% | [8.1%, 41.6%] | [0.9%, 23.6%] |
 | Ruff | 0.0% | 0.0% | [0.0%, 16.1%] | [0.0%, 16.1%] |
 
-The confidence intervals overlap at n=20. This is a directional signal, not a statistically significant result. We are not claiming the failed patch rate improvement is proven at this sample size; we are claiming the false positive elimination is real because the mechanism is structural.
+The confidence intervals overlap at n=20. This is a directional signal, not a statistically significant result.
+
+We are not claiming the failed patch rate improvement is proven at this sample size; we are claiming the false positive elimination is real because the mechanism is structural.
 
 > **human_summary from `ab-metrics-expanded.json`:**
 > Expanded A/B benchmark (seed 42, 3 repos, ~60 tasks):
@@ -44,7 +46,7 @@ The confidence intervals overlap at n=20. This is a directional signal, not a st
 
 ## 5. What this means
 
-The false positive problem is addressable at the infrastructure layer, not by making models smarter. A rename op that is defined to operate only on symbol references in the parse tree cannot hit a string literal; that guarantee comes from the op's semantics, not from the model's judgment. The op vocabulary and `ValidationReport` are the contract — agents get machine-readable rejection codes to branch on, not prose to interpret. This means the same model, operating through a structured op layer, produces fewer silent corruptions than the same model operating through raw text. The leverage is in the substrate.
+The false positive problem is addressable at the infrastructure layer, not by making models smarter. A rename op that is defined to operate only on symbol references in the parse tree cannot hit a string literal; that guarantee comes from the op's semantics, not from the model's judgment. The op vocabulary and `ValidationReport` are the contract — agents get machine-readable rejection codes to branch on, not prose to interpret. This means the same model, operating through a structured op layer, produces fewer silent corruptions than the same model operating through raw text. The leverage is in the contract layer, not the model.
 
 ## 6. One honest caveat
 
@@ -52,7 +54,7 @@ This is a reference implementation and a demo harness, not a production integrat
 
 ## 7. Links
 
-- **Repository:** `github.com/jsrodka/agent86` (see `README.md` for setup)
+- **Repository:** `github.com/j-srodka/agent86` (see `README.md` for setup)
 - **Locked spec:** `docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md`
 - **Run the benchmark:**
   ```bash
