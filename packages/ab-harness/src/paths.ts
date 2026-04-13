@@ -14,3 +14,12 @@ export function abHarnessPackageRoot(): string {
 export function defaultCacheDir(): string {
   return join(workspaceRoot(), ".cache", "ab-target");
 }
+
+/** tRPC demo profile clone directory (see `.pinned-rev-trpc`). */
+export function trpcCacheDir(): string {
+  return join(workspaceRoot(), ".cache", "ab-trpc");
+}
+
+export function defaultTrpcMetricsPath(): string {
+  return join(abHarnessPackageRoot(), "ab-metrics-trpc.json");
+}

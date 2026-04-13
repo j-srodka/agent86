@@ -196,6 +196,18 @@ Before changing the pin, re-check the candidate revision’s **lockfile** for **
 
 When **`packages/ab-harness/README.md`** documents baseline-vs-IR scenarios, **link** the **scoped rename / homonym** story to the adapter test **`packages/ts-adapter/src/apply.test.ts`** (`rename_symbol` keeps string literals intact while renaming identifiers) so the A/B narrative stays traceable to code.
 
+### tRPC demo harness (demo run)
+
+**Date:** 2026-04-13
+
+**Pinned revision:** `https://github.com/trpc/trpc` at commit **`c188dab0822caf3615199e4ac95147bc7560d26f`** (see **`packages/ab-harness/.pinned-rev-trpc`**). **Verification before pin:** `git ls-remote` on `refs/heads/main` matched this tip; all `package.json` files under the checkout were scanned for **`tree-sitter`** / **`web-tree-sitter`** — **no matches**, so the install graph does not conflict with the adapter’s **`tree-sitter@0.21.1`**.
+
+**Rationale:** Live A/B demo for stakeholders (failed patch rate, full-file reads, round trips) on a real TypeScript monorepo with **`packages/server`** and **`packages/client`**, without changing the Zod harness pin or scenarios.
+
+**Clone path:** **`.cache/ab-trpc/`** (concrete directory: **`<repo>/.cache/ab-trpc/trpc/`** after clone). **Metrics output:** **`packages/ab-harness/ab-metrics-trpc.json`** (default), with **`demo_run: true`** in the JSON. **Profile:** `pnpm --filter ab-harness start --profile trpc` (or **`AB_PROFILE=trpc`**).
+
+**Scope:** Demo-only tasks (cross-package `callProcedure` rename with probe literal, `isObject` replace, `inputWithTrackedEventId` move) use **staged copies** of a few real files under **`__agent_ir_trpc__/{a,b,c}/`** inside the clone so runs stay fast and deterministic; the pin is still the real tRPC tree at the SHA above.
+
 ## Read path — `WorkspaceSummary` vs `AdapterFingerprint` (v0)
 
 **`max_batch_ops` duplication:** On `WorkspaceSummary`, **`max_batch_ops`** repeats the same value as **`AdapterFingerprint.max_batch_ops`** on the snapshot/report. That duplication is **intentional for v0** so agents read the batch limit on the cheap read path (spec section 6) without unpacking the full fingerprint. **Changing `max_batch_ops` constitutes a breaking adapter version bump** because apply-time fingerprint equality includes it. If **`AdapterFingerprint`** grows with more capability fields that also belong on the read path, **prefer** exposing the **full `AdapterFingerprint` struct** on `WorkspaceSummary` (or a shared `adapter_capabilities` object) instead of duplicating additional fields one-by-one.
