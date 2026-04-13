@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +41,13 @@ async function copyRelFixtureToTemp(relUnderFixtures: string): Promise<string> {
   const dest = join(dir, relUnderFixtures);
   await mkdir(dirname(dest), { recursive: true });
   await copyFile(fixturePath(relUnderFixtures), dest);
+  return dir;
+}
+
+/** Copy `fixtures/<name>/` (recursive) into a fresh temp directory. */
+async function copyFixtureDirToTemp(name: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "agent86-manifest-fix-"));
+  await cp(join(fixturesDir, name), dir, { recursive: true });
   return dir;
 }
 
@@ -793,6 +800,92 @@ describe("v1 — rename_symbol expansion", () => {
       const rs = report.entries.find((e) => e.rename_surface_report != null)?.rename_surface_report;
       expect((rs?.found ?? 0)).toBeGreaterThan(10);
       expect(report.entries.some((e) => e.code === "lang.ts.cross_file_rename_broad_match")).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v1 — manifest strict mode (read path)", () => {
+  it("lenient default: invalid JSON → manifest_warnings [], manifest_url set, summary ok", async () => {
+    const root = await copyFixtureDirToTemp("manifest_invalid_json");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root);
+      expect(summary.manifest_strict).toBe(false);
+      expect(summary.manifest_warnings).toEqual([]);
+      expect(summary.manifest_url).toMatch(/^file:/);
+      const wire = JSON.parse(JSON.stringify(summary)) as Record<string, unknown>;
+      expect(wire).toHaveProperty("manifest_warnings");
+      expect(Array.isArray(wire.manifest_warnings)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("strict: invalid JSON → manifest_warnings contains lang.ts.manifest_parse_error", async () => {
+    const root = await copyFixtureDirToTemp("manifest_invalid_json");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root, { strictManifest: true });
+      expect(summary.manifest_strict).toBe(true);
+      expect(summary.manifest_warnings).toHaveLength(1);
+      const w = summary.manifest_warnings[0]!;
+      expect(w.code).toBe("lang.ts.manifest_parse_error");
+      expect(w.severity).toBe("warning");
+      expect(w.message).toMatch(/\[lang\.ts\.manifest_parse_error\]/);
+      expect(w.evidence).toMatchObject({ reason: "invalid_json" });
+      expect((w.evidence as { path?: string }).path).toContain("agent-ir.manifest.json");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("strict: non-object root → manifest_parse_error with reason non_object_root", async () => {
+    const root = await copyFixtureDirToTemp("manifest_non_object");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root, { strictManifest: true });
+      expect(summary.manifest_warnings).toHaveLength(1);
+      expect(summary.manifest_warnings[0]!.evidence).toMatchObject({ reason: "non_object_root" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("strict: missing manifest file → manifest_warnings [], manifest_url null", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent86-manifest-missing-"));
+    try {
+      await writeFile(join(root, "only.ts"), `export function only(): void {}\n`, "utf8");
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root, { strictManifest: true });
+      expect(summary.manifest_url).toBeNull();
+      expect(summary.manifest_warnings).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("strict: valid object manifest → manifest_warnings []", async () => {
+    const root = await copyFixtureDirToTemp("manifest_valid");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const summary = await buildWorkspaceSummary(snap, root, { strictManifest: true });
+      expect(summary.manifest_warnings).toEqual([]);
+      expect(summary.manifest_url).toMatch(/^file:/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("manifest_strict reflects buildWorkspaceSummary options", async () => {
+    const root = await copyFixtureDirToTemp("manifest_valid");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const lenient = await buildWorkspaceSummary(snap, root);
+      const strict = await buildWorkspaceSummary(snap, root, { strictManifest: true });
+      expect(lenient.manifest_strict).toBe(false);
+      expect(strict.manifest_strict).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
