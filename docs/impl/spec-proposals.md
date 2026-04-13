@@ -35,6 +35,6 @@ Proposed amendments to the locked spec. Each entry must include: date, proposing
 
 **Alternative (minimal):** Keep **E** in the portable table but add a normative sentence: *Implementations MAY downgrade `format_drift` to **warning** when documented in adapter capability metadata and repo policy; agents MUST honor the entry’s declared `severity`.*
 
-**Status:** Awaiting human approval before editing the locked spec file.
+**Status:** **Approved (2026-04-13).** Applied to the locked spec `format_drift` row: *Severity MAY be downgraded to W by adapters operating under partial formatter integration; the downgrade must be documented in the adapter's decisions log.*
 
 ---

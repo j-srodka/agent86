@@ -91,6 +91,8 @@ Snapshot materialization hashes file contents **after normalizing line endings t
 
 `**.tsx` files are never parsed with the v0 TypeScript grammar** (that would be silently wrong). The snapshot step **does not** include them in `files[]` or `units[]`. Instead, every materialization **discovers** every `.tsx` file under the root (recursive; excluding `node_modules`) and records each path in `**WorkspaceSnapshot.skipped_tsx_paths`** (repo-relative, sorted) so the omission is **explicit on the wire**, not an invisible gap. Parsing a `.tsx` path through the `.ts` parser is forbidden.
 
+**TSX / JSX (documented deferred to v2):** Full `.tsx` support requires a **separate grammar digest constant** (the sibling `tsx/src/parser.c` artifact) and versioning strategy; that work is **out of scope for v1**. **`skipped_tsx_paths` is the permanent v1 posture** — operators rely on explicit omission on the wire rather than silent wrong parses.
+
 **Future skip categories:** If a **second** skip reason besides TSX appears, **migrate** `skipped_tsx_paths` to a single wire field `**skipped_paths: Array<{ path: string; reason: string }>`** (sorted by `path`, then `reason`) instead of adding parallel string arrays per category.
 
 ## Tier I unit ids and `rename_symbol` / `id_resolve` delta
@@ -402,9 +404,13 @@ The **flattened forward map** is satisfied **trivially** in v0 (identity only; n
 
 The following normative codes appear in the locked table for completeness; the **v0** adapter did not emit them on any path (stubs / future use). **As of v1 provenance**, `**illegal_target_generated`** and `**allowlist_without_generator_awareness**` are removed from this list — the reference adapter emits them when §11 conditions apply. `**snapshot_content_mismatch**` is still handled separately below — it is **not** one of these “never emitted” codes.
 
-`reanchored_span` · `surface_changed` · `declaration_peer_unpatched` · `rename_surface_skipped_refs` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
+**2026-04-13 audit:** List reflects v1 state post ghost-bytes, formatter, and supersession work (audit of `applyBatch`, `rename_symbol`, `move_unit`, provenance, and report builders).
 
-**Note (v1):** `**format_drift**` is emitted by the reference adapter as a **warning** under **Formatter pinning (v1)** (spec table severity differs — documented there).
+`reanchored_span` · `surface_changed` · `declaration_peer_unpatched` · `coverage_unknown` · `coverage_miss` · `partial_apply_not_permitted`
+
+**Correction (2026-04-13):** `**rename_surface_skipped_refs**` was removed from this backtick list — the reference adapter **does** emit it when a successful `**rename_symbol**` has one or more intentional skips (see **rename_symbol expansion (v1)**).
+
+**Note (v1):** `**format_drift**` is emitted by the reference adapter as a **warning** under **Formatter pinning (v1)** when drift is detected under the `**lf-only`** profile (portable §12.1 table lists **E**; normative downgrade sentence added to the locked spec **2026-04-13**).
 
 Codes **not** in this list may still be **rare** in v0 (e.g. only on specific apply failures). `**lang.*`** subcodes are modeled in types; **v0 emits none**.
 
@@ -422,9 +428,9 @@ Codes **not** in this list may still be **rare** in v0 (e.g. only on specific ap
 | Medium   | Ghost-bytes report fields     | **Done (v1):** `**export_surface_delta**` (Tree-sitter export-name digest), `**coverage_hint**` null placeholders, `**declaration_peers_unpatched**` (same-dir `**basename.d.ts**`); see **Ghost-bytes report fields (v1)**                                                                              | 5.1            |
 | Medium   | `rename_symbol` scope         | **Done (v1 rename expansion):** `function_declaration` + `method_definition`; optional `cross_file`; normative `rename_surface_report`; see **rename_symbol expansion (v1)**                                           | Ops            |
 | Medium   | Manifest strict mode          | **Done (v1):** opt-in `**strictManifest`** / `**readAgentIrManifest({ strict: true })**`, root-is-object check, `**lang.ts.manifest_parse_error**` on `**WorkspaceSummary.manifest_warnings**`; deeper schema deferred | 16             |
-| Low      | TSX grammar                   | `skipped_tsx_paths` only; full TSX needs separate grammar constant                                                                                                                                                     | 4.1            |
-| Low      | Unemitted table codes         | See “never emitted” list above (**excludes** `snapshot_content_mismatch`, emitted by §9 gate 5 v1)                                                                                                                     | 12.1           |
-| Low      | Supersession tests            | Ghost chain tests need `move_unit`                                                                                                                                                                                     | 8              |
+| Low      | TSX grammar                   | **Documented deferred (v2):** `skipped_tsx_paths` is permanent v1 posture; full TSX requires separate grammar constant                                                                                                  | 4.1            |
+| Low      | Unemitted table codes         | **Audited (2026-04-13):** see “never emitted” list above (**excludes** `snapshot_content_mismatch`, emitted by §9 gate 5 v1)                                                                                            | 12.1           |
+| Low      | Supersession tests            | **Done (v1):** `packages/conformance/src/golden.test.ts` — **v1 — supersession conformance (section 8)**                                                                                                                | 8              |
 
 
 ## Ghost-bytes report fields (v1)

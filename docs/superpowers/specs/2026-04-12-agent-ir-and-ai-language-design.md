@@ -310,7 +310,7 @@ Implementations **must** emit these codes; agents **must** branch on `code`, not
 | Code | Sev | Meaning | Agent action |
 |---|---|---|---|
 | `snapshot_content_mismatch` | E | File bytes do not match the canonicalization profile declared in the snapshot header. | Re-canonicalize and re-snapshot before applying ops. |
-| `format_drift` | E | Formatter-only byte change detected between snapshot and apply time (policy: reject-on-drift). | Refresh snapshot under canonical-bytes policy. |
+| `format_drift` | E | Formatter-only byte change detected between snapshot and apply time (policy: reject-on-drift). Severity MAY be downgraded to W by adapters operating under partial formatter integration; the downgrade must be documented in the adapter's decisions log. | Refresh snapshot under canonical-bytes policy. |
 | `reanchored_span` | W | Span was re-anchored via AST proximity (non-normative path). Result has `confidence: reanchored`. | Human review recommended before commit. |
 
 #### Grammar and adapter integrity (§9)
