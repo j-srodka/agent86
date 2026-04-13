@@ -261,7 +261,7 @@ The following **must not** be rewritten (record each in **`rename_surface_report
 | Value | Semantics |
 | ----- | --------- |
 | **`false`** | Safe / narrow: same-file rewrite only; no other files are scanned. |
-| **`true`** | After a successful same-file rename, scan **every other** tracked `.ts` file in the snapshot (full snapshot, all `.ts` files in `WorkspaceSnapshot.files`). **Best-effort:** rewrite **`identifier`** nodes whose text equals the old name, using the same homonym skips (strings, types, property access as for functions). **No** import/export graph, **no** TypeScript checker — two modules may each export a function `get`; **both** may be rewritten. Agents **must** treat **`found` / `rewritten` / `skipped`** as **best-effort** signal, not soundness. |
+| **`true`** | After a successful same-file rename, scan **every other** tracked `.ts` file in the snapshot (full snapshot, all `.ts` files in `WorkspaceSnapshot.files`). **Best-effort:** rewrite **`identifier`** nodes whose text equals the old name, using string/template and type-position skips. **`export { oldName as alias }`** and other **export-clause** value identifiers are rewritten when matched (no export-clause skip). Identifiers under **`import_statement`** (import specifiers) are **skipped** with **`skip:import_specifier`** — the adapter does not model module resolution; callers may need to align imports manually after a cross-file rename. **No** whole-project TypeScript checker — two modules may each export a function `get`; **both** may be rewritten outside import lines. Agents **must** treat **`found` / `rewritten` / `skipped`** as **best-effort** signal, not soundness. |
 
 **Limitation (loud):** Cross-file rename **does not** prove that a matching identifier refers to the renamed symbol. Common names (**`get`**, **`id`**, **`run`**) may match many unrelated identifiers; agents should inspect **`rename_surface_report`** and prefer **`cross_file: false`** when a narrow same-file edit suffices.
 
@@ -278,20 +278,23 @@ Shape:
   found: number;       // candidate nodes matching old name in the applied search scope (see below)
   rewritten: number;   // nodes actually replaced
   skipped: Array<{
-    unit_id: string;   // the op’s target unit id (Tier I handle for the renamed declaration)
-    reason: string;    // machine-readable skip reason (homonym, type_position, string_context, …)
-    file: string;      // repo-relative POSIX path of the file containing the skipped occurrence
+    unit_id: string | null;  // smallest enclosing Tier I `LogicalUnit` for this reference site, or `null`
+    reason: string;          // machine-readable skip reason, or `no_enclosing_unit` when `unit_id` is null
+    file: string;            // repo-relative POSIX path of the file containing the skipped occurrence
   }>;
 }
 ```
 
 - **`found`** counts nodes that matched the old name and were classified (rewritten or skipped), aggregated across files touched by the op (same-file only when `cross_file: false`).
+- **`skipped[].unit_id`:** the **smallest** (tightest span) Tier I unit in the same file whose byte range **encloses** the skipped identifier span. When no `LogicalUnit` encloses the reference (e.g. some top-level script between units), **`unit_id` is `null`** and **`reason` is exactly `no_enclosing_unit`** (granular skip reasons apply only when an enclosing unit exists).
 - **`skipped[].file`** is always set so agents can locate occurrences (same-file uses that file; cross-file uses each other file’s path).
 - **Best-effort:** for cross-file scans, **`skipped`** may be empty even when false positives exist — we only list **intentional** skips (homonym rules), not “unknown semantic mismatch.”
+- **`export { foo as bar }` / named re-exports:** identifiers in the **`export` clause** that the TypeScript binder resolves to the same symbol as the renamed declaration are **rewritten** to **`new_name`** (same as other value identifiers). No separate “skip export list” limitation in the reference adapter for this pattern.
 
 ### Warnings (section 12.1)
 
 - Emit **`rename_surface_skipped_refs`** (warning) when **`skipped.length > 0`** so agents are alerted without comparing counts manually.
+- Emit **`lang.ts.cross_file_rename_broad_match`** (warning) when **`cross_file: true`** and **`rename_surface_report.found`** is **strictly greater than** **`CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD`** (**10** in this repo). This is the primary guardrail when a best-effort cross-file scan touches many name matches — **`rename_surface_skipped_refs`** alone does not signal mass rewrite risk (skipped can be empty while **`found`** is large). Integrators may treat the threshold as a tunable constant in code; document changes here when bumped.
 - **`parse_scope_file`** info entry remains; cross-file edits still do not imply project-wide semantic correctness.
 
 ### Atomicity
@@ -303,6 +306,7 @@ Cross-file rename may touch many files. **`applyBatch`** already backs up **all*
 | Code | Severity | Meaning |
 | ---- | -------- | ------- |
 | **`lang.ts.rename_unsupported_node_kind`** | error | Target unit’s AST node is not `function_declaration` or `method_definition` (e.g. future unit kinds). |
+| **`lang.ts.cross_file_rename_broad_match`** | warning | **`cross_file: true`** and **`rename_surface_report.found` > 10** (default threshold); many textual matches — high false-positive risk before commit. Evidence: `{ found, threshold }`. |
 
 ---
 

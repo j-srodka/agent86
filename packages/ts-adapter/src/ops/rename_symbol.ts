@@ -7,14 +7,48 @@ import { parseTypeScriptSource } from "../parser.js";
 import type { LogicalUnit, RenameSurfaceReport, WorkspaceSnapshot } from "../types.js";
 import {
   findEnclosingClassBody,
-  isCrossFileImportExportBindingSite,
   isInTypeOnlyPosition,
   isObjectLiteralPropertyKey,
+  isUnderImportStatement,
   isUnderStringOrTemplate,
   tsIdentifierRefersToFunction,
   tsIdentifierRefersToMethod,
   type SkippedRef,
 } from "./rename_scope.js";
+
+/** Cross-file `rename_surface_report.found` threshold for `lang.ts.cross_file_rename_broad_match` (see v0-decisions.md). */
+export const CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD = 10;
+
+function enclosingUnitIdForReference(
+  snapshot: WorkspaceSnapshot,
+  filePath: string,
+  refStart: number,
+  refEnd: number,
+): string | null {
+  const candidates = snapshot.units.filter(
+    (u) => u.file_path === filePath && u.start_byte <= refStart && u.end_byte >= refEnd,
+  );
+  if (candidates.length === 0) {
+    return null;
+  }
+  return candidates
+    .slice()
+    .sort((a, b) => a.end_byte - a.start_byte - (b.end_byte - b.start_byte))[0]!.id;
+}
+
+/** Skipped ref: `unit_id` is the smallest enclosing Tier I unit, or `null` with reason `no_enclosing_unit`. */
+function skippedRef(
+  snapshot: WorkspaceSnapshot,
+  filePath: string,
+  node: Parser.SyntaxNode,
+  granularReason: string,
+): SkippedRef {
+  const uid = enclosingUnitIdForReference(snapshot, filePath, node.startIndex, node.endIndex);
+  if (uid === null) {
+    return { unit_id: null, reason: "no_enclosing_unit", file: filePath };
+  }
+  return { unit_id: uid, reason: granularReason, file: filePath };
+}
 
 export interface RenameSymbolInput {
   snapshotRootPath: string;
@@ -94,6 +128,7 @@ function sameFileFunctionRename(
   decl: Parser.SyntaxNode,
   unit: LogicalUnit,
   newName: string,
+  snapshot: WorkspaceSnapshot,
 ): { ok: true; nextSource: string; report: RenameSurfaceReport } | { ok: false; message: string } {
   const nameNode = decl.childForFieldName("name");
   if (!nameNode || nameNode.type !== "identifier") {
@@ -114,11 +149,9 @@ function sameFileFunctionRename(
     }
     if (n.type === "property_identifier") {
       found++;
-      skipped.push({
-        unit_id: unit.id,
-        reason: "skip:property_member_access_function_target",
-        file: unit.file_path,
-      });
+      skipped.push(
+        skippedRef(snapshot, unit.file_path, n, "skip:property_member_access_function_target"),
+      );
       continue;
     }
     if (n.type !== "identifier") {
@@ -126,11 +159,14 @@ function sameFileFunctionRename(
     }
     found++;
     if (isUnderStringOrTemplate(n) || isInTypeOnlyPosition(n)) {
-      skipped.push({
-        unit_id: unit.id,
-        reason: isUnderStringOrTemplate(n) ? "skip:string_or_template_context" : "skip:type_position",
-        file: unit.file_path,
-      });
+      skipped.push(
+        skippedRef(
+          snapshot,
+          unit.file_path,
+          n,
+          isUnderStringOrTemplate(n) ? "skip:string_or_template_context" : "skip:type_position",
+        ),
+      );
       continue;
     }
     if (tsIdentifierRefersToFunction(canonical, n.startIndex, decl, oldName)) {
@@ -138,11 +174,7 @@ function sameFileFunctionRename(
       rewritten++;
       continue;
     }
-    skipped.push({
-      unit_id: unit.id,
-      reason: "skip:lexical_binding_not_target",
-      file: unit.file_path,
-    });
+    skipped.push(skippedRef(snapshot, unit.file_path, n, "skip:lexical_binding_not_target"));
   }
 
   if (edits.length === 0) {
@@ -162,6 +194,7 @@ function sameFileMethodRename(
   decl: Parser.SyntaxNode,
   unit: LogicalUnit,
   newName: string,
+  snapshot: WorkspaceSnapshot,
 ): { ok: true; nextSource: string; report: RenameSurfaceReport } | { ok: false; message: string } {
   const nameNode = decl.childForFieldName("name");
   if (!nameNode || nameNode.type !== "property_identifier") {
@@ -188,19 +221,18 @@ function sameFileMethodRename(
 
     found++;
     if (isUnderStringOrTemplate(n) || isInTypeOnlyPosition(n)) {
-      skipped.push({
-        unit_id: unit.id,
-        reason: isUnderStringOrTemplate(n) ? "skip:string_or_template_context" : "skip:type_position",
-        file: unit.file_path,
-      });
+      skipped.push(
+        skippedRef(
+          snapshot,
+          unit.file_path,
+          n,
+          isUnderStringOrTemplate(n) ? "skip:string_or_template_context" : "skip:type_position",
+        ),
+      );
       continue;
     }
     if (isObjectLiteralPropertyKey(n)) {
-      skipped.push({
-        unit_id: unit.id,
-        reason: "skip:object_literal_key",
-        file: unit.file_path,
-      });
+      skipped.push(skippedRef(snapshot, unit.file_path, n, "skip:object_literal_key"));
       continue;
     }
 
@@ -209,11 +241,7 @@ function sameFileMethodRename(
       rewritten++;
       continue;
     }
-    skipped.push({
-      unit_id: unit.id,
-      reason: "skip:not_target_method_binding",
-      file: unit.file_path,
-    });
+    skipped.push(skippedRef(snapshot, unit.file_path, n, "skip:not_target_method_binding"));
   }
 
   if (edits.length === 0) {
@@ -233,7 +261,7 @@ function crossFileIdentifierRewrite(
   filePath: string,
   oldName: string,
   newName: string,
-  unitId: string,
+  snapshot: WorkspaceSnapshot,
 ): { nextSource: string; report: RenameSurfaceReport } {
   const tree = parseTypeScriptSource(canonical);
   const edits: Edit[] = [];
@@ -250,19 +278,18 @@ function crossFileIdentifierRewrite(
     }
     found++;
     if (isUnderStringOrTemplate(n) || isInTypeOnlyPosition(n)) {
-      skipped.push({
-        unit_id: unitId,
-        reason: isUnderStringOrTemplate(n) ? "skip:string_or_template_context" : "skip:type_position",
-        file: filePath,
-      });
+      skipped.push(
+        skippedRef(
+          snapshot,
+          filePath,
+          n,
+          isUnderStringOrTemplate(n) ? "skip:string_or_template_context" : "skip:type_position",
+        ),
+      );
       continue;
     }
-    if (isCrossFileImportExportBindingSite(n)) {
-      skipped.push({
-        unit_id: unitId,
-        reason: "skip:import_or_export_specifier",
-        file: filePath,
-      });
+    if (isUnderImportStatement(n)) {
+      skipped.push(skippedRef(snapshot, filePath, n, "skip:import_specifier"));
       continue;
     }
     edits.push({ start: n.startIndex, end: n.endIndex, text: newName });
@@ -319,9 +346,9 @@ export async function applyRenameSymbol(input: RenameSymbolInput): Promise<Renam
 
   let same: { ok: true; nextSource: string; report: RenameSurfaceReport } | { ok: false; message: string };
   if (unit.kind === "function_declaration") {
-    same = sameFileFunctionRename(canonical, decl, unit, newName);
+    same = sameFileFunctionRename(canonical, decl, unit, newName, snapshot);
   } else {
-    same = sameFileMethodRename(canonical, decl, unit, newName);
+    same = sameFileMethodRename(canonical, decl, unit, newName, snapshot);
   }
   if (!same.ok) {
     return { ok: false, message: same.message };
@@ -341,7 +368,7 @@ export async function applyRenameSymbol(input: RenameSymbolInput): Promise<Renam
       const oAbs = join(snapshotRootPath, ...rel.split("/"));
       const oRaw = await readFile(oAbs, "utf8");
       const oCan = canonicalizeSourceForSnapshot(oRaw);
-      const { nextSource, report: r } = crossFileIdentifierRewrite(oCan, rel, oldName, newName, unit.id);
+      const { nextSource, report: r } = crossFileIdentifierRewrite(oCan, rel, oldName, newName, snapshot);
       mergedReport = mergeReports(mergedReport, r);
       if (nextSource !== oCan) {
         outMap.set(rel, nextSource);

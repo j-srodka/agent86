@@ -59,6 +59,18 @@ export function isInTypeOnlyPosition(node: Parser.SyntaxNode): boolean {
   return false;
 }
 
+/** Cross-file: skip `import { name }` / `import name` specifiers (module graph not updated semantically). */
+export function isUnderImportStatement(node: Parser.SyntaxNode): boolean {
+  let cur: Parser.SyntaxNode | null = node;
+  while (cur != null) {
+    if (cur.type === "import_statement") {
+      return true;
+    }
+    cur = cur.parent;
+  }
+  return false;
+}
+
 export function isObjectLiteralPropertyKey(node: Parser.SyntaxNode): boolean {
   if (node.type !== "property_identifier" && node.type !== "shorthand_property_identifier") {
     return false;
@@ -70,24 +82,6 @@ export function isObjectLiteralPropertyKey(node: Parser.SyntaxNode): boolean {
   if (p.type === "pair") {
     const k = p.childForFieldName("key");
     return k === node;
-  }
-  return false;
-}
-
-/**
- * Cross-file best-effort: skip import bindings and `export { name }` — not identifiers inside
- * `export function … { … }` bodies.
- */
-export function isCrossFileImportExportBindingSite(node: Parser.SyntaxNode): boolean {
-  let cur: Parser.SyntaxNode | null = node;
-  while (cur != null) {
-    if (cur.type === "import_statement") {
-      return true;
-    }
-    if (cur.type === "export_clause" || cur.type === "named_exports" || cur.type === "namespace_export") {
-      return true;
-    }
-    cur = cur.parent;
   }
   return false;
 }

@@ -8,7 +8,7 @@ import { resolveOpTarget } from "./id_resolve.js";
 import { readAgentIrManifest } from "./manifest.js";
 import { applyMoveUnit } from "./ops/move_unit.js";
 import { applyReplaceUnit } from "./ops/replace_unit.js";
-import { applyRenameSymbol } from "./ops/rename_symbol.js";
+import { applyRenameSymbol, CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD } from "./ops/rename_symbol.js";
 import { getGeneratedAllowlistPolicy } from "./policies.js";
 import { fileMatchesGeneratedEditAllowlist } from "./provenance.js";
 import { buildFailureReport, buildSuccessReport } from "./report.js";
@@ -535,6 +535,21 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
           evidence: null,
           rename_surface_report: rs,
         });
+        if (op.cross_file && rs.found > CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD) {
+          renameSurfaceEntries.push({
+            code: "lang.ts.cross_file_rename_broad_match",
+            severity: "warning",
+            message: `cross_file rename matched many name occurrences (found=${rs.found}, threshold=${CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD}); review all touched files before commit — many may be false positives.`,
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: "project",
+            confidence: "canonical",
+            evidence: {
+              found: rs.found,
+              threshold: CROSS_FILE_RENAME_BROAD_MATCH_THRESHOLD,
+            },
+          });
+        }
         if (rs.skipped.length > 0) {
           renameSurfaceEntries.push({
             code: "rename_surface_skipped_refs",

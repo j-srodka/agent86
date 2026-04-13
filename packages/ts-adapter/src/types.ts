@@ -61,7 +61,11 @@ export type ValidationEntryCode = SpecNormativeCode | LangSubcode;
 
 /** Normative attachment for `rename_symbol` success (section 5.1); always set by the reference adapter. */
 export interface RenameSurfaceSkipped {
-  unit_id: string;
+  /**
+   * Tier I unit whose span encloses this reference, when one exists; otherwise `null`
+   * with reason `no_enclosing_unit` (e.g. top-level script between units).
+   */
+  unit_id: string | null;
   reason: string;
   /** Repo-relative POSIX path. */
   file: string;

@@ -756,4 +756,45 @@ describe("v1 — rename_symbol expansion", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("export { foo as bar }: export-clause id rewrites with declaration (TS-resolved binding)", async () => {
+    const root = await copyFixtureToTemp("rename_export_reexport.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const u = snap.units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: u.id, new_name: "renamedFoo" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const text = await readFile(join(root, "rename_export_reexport.ts"), "utf8");
+      expect(text).toContain("export function renamedFoo()");
+      expect(text).toMatch(/export\s*\{\s*renamedFoo\s+as\s+bar\s*\}/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cross_file: lang.ts.cross_file_rename_broad_match when found exceeds default threshold", async () => {
+    const root = await copyTwoFixtures("rename_cross_broad_a.ts", "rename_cross_broad_b.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const ux = snap.units.find((x) => x.file_path === "rename_cross_broad_a.ts");
+      expect(ux).toBeDefined();
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: ux!.id, new_name: "wide", cross_file: true }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const rs = report.entries.find((e) => e.rename_surface_report != null)?.rename_surface_report;
+      expect((rs?.found ?? 0)).toBeGreaterThan(10);
+      expect(report.entries.some((e) => e.code === "lang.ts.cross_file_rename_broad_match")).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
