@@ -2,15 +2,21 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { applyBatch, materializeSnapshot, parseTypeScriptSource, canonicalizeSourceForSnapshot } from "ts-adapter";
+import type { ValidationReport } from "ts-adapter";
 
 import { refreshAbFixtures } from "./copy-fixtures.js";
 import type { TaskMetrics } from "./metrics.js";
+import { approachMetrics, tokenCharsFromSnapshotFiles } from "./metrics.js";
 
 const TOOLCHAIN = "toolchain:ab-harness";
 
 function parseTreeOk(source: string): boolean {
   const t = parseTypeScriptSource(canonicalizeSourceForSnapshot(source));
   return !t.rootNode.hasError;
+}
+
+function validationCodesFromReport(r: ValidationReport): string[] {
+  return r.entries.map((e) => String(e.code));
 }
 
 const EXPORT_DUP_BAD = `export function keep(): number {
@@ -58,20 +64,27 @@ async function runHomonym(cloneRoot: string, snapshotRoot: string): Promise<Task
   const literalBroken = !naive.includes('"victim"');
   const brittleFailed = !parseOk || literalBroken;
   let baselineDetail: string;
+  let baselineFailure: string | null = null;
   if (!parseOk) {
     baselineDetail = "parse_error after naive replace";
+    baselineFailure = "parse_error";
   } else if (literalBroken) {
     baselineDetail = "naive replace corrupted string literal (expected brittle failure)";
+    baselineFailure = "false_positive_rename";
   } else {
     baselineDetail = "unexpected: naive replace kept literal and parsed";
+    baselineFailure = "unexpected_success";
   }
-  const baseline: TaskMetrics["baseline"] = {
+
+  const baseline = approachMetrics({
     outcome: brittleFailed ? "failure" : "success",
+    failure_reason: baselineFailure,
     full_file_reads: 1,
+    round_trips: 1,
+    tokens_chars_read: raw.length,
     failed_patches: brittleFailed ? 1 : 0,
-    rounds: 1,
     detail: baselineDetail,
-  };
+  });
 
   await refreshAbFixtures(cloneRoot);
   const snap = await materializeSnapshot({ rootPath: snapshotRoot });
@@ -80,13 +93,16 @@ async function runHomonym(cloneRoot: string, snapshotRoot: string): Promise<Task
     return {
       task_id,
       baseline,
-      ir: {
+      ir: approachMetrics({
         outcome: "failure",
+        failure_reason: "string_not_found",
         full_file_reads: snap.files.length,
+        round_trips: 1,
+        tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
         failed_patches: 1,
-        rounds: 1,
         detail: "missing homonym.ts unit",
-      },
+        validation_codes: [],
+      }),
     };
   }
   const report = await applyBatch({
@@ -101,18 +117,21 @@ async function runHomonym(cloneRoot: string, snapshotRoot: string): Promise<Task
   return {
     task_id,
     baseline,
-    ir: {
+    ir: approachMetrics({
       outcome: irOk ? "success" : "failure",
+      failure_reason: irOk ? null : report.outcome === "success" ? "postcondition_failed" : "parse_error",
       full_file_reads: snap.files.length,
+      round_trips: 1,
+      tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
       failed_patches: irOk ? 0 : 1,
-      rounds: 1,
       detail:
         report.outcome === "success"
           ? irOk
             ? "rename_symbol retained string literal"
             : "postcondition check failed"
           : (report.entries[0]?.message ?? "applyBatch failed"),
-    },
+      validation_codes: validationCodesFromReport(report),
+    }),
   };
 }
 
@@ -123,14 +142,17 @@ async function runExportDup(cloneRoot: string, snapshotRoot: string): Promise<Ta
 
   await refreshAbFixtures(cloneRoot);
   await writeFile(abs, EXPORT_DUP_BAD, "utf8");
-  const baselineParseOk = parseTreeOk(await readFile(abs, "utf8"));
-  const baseline: TaskMetrics["baseline"] = {
+  const rawRead = await readFile(abs, "utf8");
+  const baselineParseOk = parseTreeOk(rawRead);
+  const baseline = approachMetrics({
     outcome: baselineParseOk ? "success" : "failure",
+    failure_reason: baselineParseOk ? "unexpected_success" : "parse_error",
     full_file_reads: 1,
+    round_trips: 1,
+    tokens_chars_read: rawRead.length,
     failed_patches: baselineParseOk ? 0 : 1,
-    rounds: 1,
     detail: baselineParseOk ? "unexpected parse success" : "parse_error (export export)",
-  };
+  });
 
   await refreshAbFixtures(cloneRoot);
   const snap = await materializeSnapshot({ rootPath: snapshotRoot });
@@ -140,13 +162,16 @@ async function runExportDup(cloneRoot: string, snapshotRoot: string): Promise<Ta
     return {
       task_id,
       baseline,
-      ir: {
+      ir: approachMetrics({
         outcome: "failure",
+        failure_reason: "string_not_found",
         full_file_reads: snap.files.length,
+        round_trips: 1,
+        tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
         failed_patches: 1,
-        rounds: 1,
         detail: "missing second unit",
-      },
+        validation_codes: [],
+      }),
     };
   }
   const report = await applyBatch({
@@ -165,13 +190,16 @@ async function runExportDup(cloneRoot: string, snapshotRoot: string): Promise<Ta
   return {
     task_id,
     baseline,
-    ir: {
+    ir: approachMetrics({
       outcome: irOk ? "success" : "failure",
+      failure_reason: irOk ? null : "parse_error",
       full_file_reads: snap.files.length,
+      round_trips: 1,
+      tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
       failed_patches: irOk ? 0 : 1,
-      rounds: 1,
       detail: irOk ? "replace_unit without duplicate export" : (report.entries[0]?.message ?? "failed"),
-    },
+      validation_codes: validationCodesFromReport(report),
+    }),
   };
 }
 
@@ -182,14 +210,17 @@ async function runStacked(cloneRoot: string, snapshotRoot: string): Promise<Task
 
   await refreshAbFixtures(cloneRoot);
   await writeFile(abs, STACKED_BAD, "utf8");
-  const baselineParseOk = parseTreeOk(await readFile(abs, "utf8"));
-  const baseline: TaskMetrics["baseline"] = {
+  const rawRead = await readFile(abs, "utf8");
+  const baselineParseOk = parseTreeOk(rawRead);
+  const baseline = approachMetrics({
     outcome: baselineParseOk ? "success" : "failure",
+    failure_reason: baselineParseOk ? "unexpected_success" : "parse_error",
     full_file_reads: 1,
+    round_trips: 1,
+    tokens_chars_read: rawRead.length,
     failed_patches: baselineParseOk ? 0 : 1,
-    rounds: 1,
     detail: baselineParseOk ? "unexpected parse success" : "parse_error (export export on mid)",
-  };
+  });
 
   await refreshAbFixtures(cloneRoot);
   const snap = await materializeSnapshot({ rootPath: snapshotRoot });
@@ -199,13 +230,16 @@ async function runStacked(cloneRoot: string, snapshotRoot: string): Promise<Task
     return {
       task_id,
       baseline,
-      ir: {
+      ir: approachMetrics({
         outcome: "failure",
+        failure_reason: "string_not_found",
         full_file_reads: snap.files.length,
+        round_trips: 1,
+        tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
         failed_patches: 1,
-        rounds: 1,
         detail: "missing middle unit",
-      },
+        validation_codes: [],
+      }),
     };
   }
   const report = await applyBatch({
@@ -224,12 +258,15 @@ async function runStacked(cloneRoot: string, snapshotRoot: string): Promise<Task
   return {
     task_id,
     baseline,
-    ir: {
+    ir: approachMetrics({
       outcome: irOk ? "success" : "failure",
+      failure_reason: irOk ? null : "parse_error",
       full_file_reads: snap.files.length,
+      round_trips: 1,
+      tokens_chars_read: tokenCharsFromSnapshotFiles(snap),
       failed_patches: irOk ? 0 : 1,
-      rounds: 1,
       detail: irOk ? "middle unit replace ok" : (report.entries[0]?.message ?? "failed"),
-    },
+      validation_codes: validationCodesFromReport(report),
+    }),
   };
 }

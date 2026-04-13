@@ -6,14 +6,14 @@ Proposed amendments to the locked spec. Each entry must include: date, proposing
 
 ## 2026-04-12 — `id_superseded` warning code (Cursor)
 
-**Rationale:** v1 `move_unit` + section 8 auto-resolve emits an explicit **`id_superseded`** warning when an op `target_id` is resolved via `id_resolve` so resolution is never silent. The locked spec section 12.1 table does not yet list this code.
+**Rationale:** v1 `move_unit` + section 8 auto-resolve emits an explicit `**id_superseded`** warning when an op `target_id` is resolved via `id_resolve` so resolution is never silent. The locked spec section 12.1 table does not yet list this code.
 
 **Placement:** Add the row to the **Identity and addressing** group of section 12.1 (same subsection as `unknown_or_superseded_id`, `ghost_unit`, etc.).
 
 **Normative details:**
 
-- **Severity:** Always **`warning`**. Not policy-configurable (unlike e.g. generated-allowlist policy on the read path).
-- **Evidence:** `evidence` **must** include **`{ resolved_to: string }`** (the live unit id after `id_resolve`).
+- **Severity:** Always `**warning`**. Not policy-configurable (unlike e.g. generated-allowlist policy on the read path).
+- **Evidence:** `evidence` **must** include `**{ resolved_to: string }`** (the live unit id after `id_resolve`).
 
 **PROPOSED — add to section 12.1, Identity and addressing table, new row:**
 

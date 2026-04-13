@@ -148,3 +148,4 @@ vendor/
 
 # A/B harness local metrics output
 ab-metrics.json
+ab-metrics-trpc.json
