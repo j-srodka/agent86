@@ -355,6 +355,7 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
   let current: WorkspaceSnapshot = snapshot;
   const mergedDelta: Record<string, string> = {};
   const idSupersededWarnings: ValidationEntry[] = [];
+  const renameSurfaceEntries: ValidationEntry[] = [];
   const fetchUnavailableOmitted: OmittedBlob[] = [];
   const blobPrefetchWarnings: ValidationEntry[] = [];
 
@@ -499,29 +500,54 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
         await prefetchExternalizedBlob(unit, opIndex);
         const r = await applyRenameSymbol({
           snapshotRootPath,
+          snapshot: current,
           unit,
           newName: op.new_name,
+          cross_file: op.cross_file,
           materialize: { previousSnapshot: current },
         });
         if (!r.ok) {
           await restoreDisk();
-          const code = r.message.includes("v0 supports function_declaration only")
-            ? "op_vocabulary_unsupported"
-            : "parse_error";
-          const msg =
-            code === "op_vocabulary_unsupported"
-              ? "rename_symbol on this unit kind is not supported in v0 (function_declaration only)"
-              : r.message;
+          const code =
+            r.code === "lang.ts.rename_unsupported_node_kind"
+              ? ("lang.ts.rename_unsupported_node_kind" as const)
+              : "parse_error";
           return buildFailureReport({
             snapshot_id: snapshot.snapshot_id,
             adapter,
             toolchain_fingerprint_at_apply: toolchainFingerprintAtApply,
-            entries: [entry(code, msg, opIndex, op.target_id)],
+            entries: [entry(code, r.message, opIndex, op.target_id)],
             omitted_due_to_size: failureOmitted(),
           });
         }
         current = r.nextSnapshot;
         Object.assign(mergedDelta, r.id_resolve_delta);
+        const rs = r.rename_surface_report;
+        const scope: ValidationEntry["check_scope"] = op.cross_file ? "project" : "file";
+        renameSurfaceEntries.push({
+          code: "parse_scope_file",
+          severity: "info",
+          message: "rename_symbol completed; see rename_surface_report for found/rewritten/skipped.",
+          op_index: opIndex,
+          target_id: op.target_id,
+          check_scope: scope,
+          confidence: "canonical",
+          evidence: null,
+          rename_surface_report: rs,
+        });
+        if (rs.skipped.length > 0) {
+          renameSurfaceEntries.push({
+            code: "rename_surface_skipped_refs",
+            severity: "warning",
+            message:
+              "rename_symbol skipped one or more matching identifiers (homonym/type/import rules); inspect rename_surface_report.skipped.",
+            op_index: opIndex,
+            target_id: op.target_id,
+            check_scope: scope,
+            confidence: "canonical",
+            evidence: null,
+          });
+        }
         continue;
       }
 
@@ -599,7 +625,11 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
 
     const omittedFinal = mergeOmitted(omittedBlobsFromExternalizedUnits(current), fetchUnavailableOmitted);
 
-    const successEntries: ValidationEntry[] = [...allowlistAuditWarnings, ...idSupersededWarnings];
+    const successEntries: ValidationEntry[] = [
+      ...allowlistAuditWarnings,
+      ...idSupersededWarnings,
+      ...renameSurfaceEntries,
+    ];
     if (omittedFinal.some((o) => o.reason === "inline_threshold")) {
       successEntries.push({
         code: "inline_threshold_exceeded",
@@ -613,16 +643,18 @@ export async function applyBatch(input: ApplyBatchInput): Promise<ValidationRepo
       });
     }
     successEntries.push(...blobPrefetchWarnings);
-    successEntries.push({
-      code: "parse_scope_file",
-      severity: "info",
-      message: "Parse check ran on edited file(s) only.",
-      op_index: null,
-      target_id: null,
-      check_scope: "file",
-      confidence: "canonical",
-      evidence: null,
-    });
+    if (renameSurfaceEntries.length === 0) {
+      successEntries.push({
+        code: "parse_scope_file",
+        severity: "info",
+        message: "Parse check ran on edited file(s) only.",
+        op_index: null,
+        target_id: null,
+        check_scope: "file",
+        confidence: "canonical",
+        evidence: null,
+      });
+    }
 
     return buildSuccessReport({
       snapshot_id: snapshot.snapshot_id,

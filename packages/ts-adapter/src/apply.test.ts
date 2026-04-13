@@ -69,11 +69,11 @@ describe("applyBatch", () => {
     expect(text.includes("function victim")).toBe(false);
   });
 
-  it("rejects rename_symbol on method_definition (v0)", async () => {
+  it("rename_symbol renames method_definition and emits rename_surface_report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agent86-apply-"));
     await writeFile(
       join(dir, "cls.ts"),
-      `class C {\n  m(): void {}\n}\n`,
+      `class C {\n  m(): void {\n    this.m();\n  }\n}\n`,
       "utf8",
     );
     const snap = await materializeSnapshot({ rootPath: dir });
@@ -82,12 +82,16 @@ describe("applyBatch", () => {
     const report = await applyBatch({
       snapshotRootPath: dir,
       snapshot: snap,
-      ops: [{ op: "rename_symbol", target_id: m!.id, new_name: "n" }],
+      ops: [{ op: "rename_symbol", target_id: m!.id, new_name: "renamedM" }],
       toolchainFingerprintAtApply: toolchain,
     });
-    expect(report.outcome).toBe("failure");
-    expect(report.entries[0]?.code).toBe("op_vocabulary_unsupported");
-    expect(report.entries[0]?.message).toContain("not supported in v0");
+    expect(report.outcome).toBe("success");
+    const text = await readFile(join(dir, "cls.ts"), "utf8");
+    expect(text).toContain("renamedM(): void");
+    expect(text).toContain("this.renamedM()");
+    const withReport = report.entries.find((e) => e.rename_surface_report != null);
+    expect(withReport?.rename_surface_report?.found).toBeGreaterThan(0);
+    expect(withReport?.rename_surface_report?.rewritten).toBeGreaterThan(0);
   });
 
   it("Task 7: grammar_mismatch when snapshot grammar_digest does not match applying adapter", async () => {

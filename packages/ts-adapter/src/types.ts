@@ -59,6 +59,20 @@ export type LangSubcode = `lang.${string}`;
 
 export type ValidationEntryCode = SpecNormativeCode | LangSubcode;
 
+/** Normative attachment for `rename_symbol` success (section 5.1); always set by the reference adapter. */
+export interface RenameSurfaceSkipped {
+  unit_id: string;
+  reason: string;
+  /** Repo-relative POSIX path. */
+  file: string;
+}
+
+export interface RenameSurfaceReport {
+  found: number;
+  rewritten: number;
+  skipped: RenameSurfaceSkipped[];
+}
+
 export interface ValidationEntry {
   code: ValidationEntryCode;
   severity: EntrySeverity;
@@ -69,6 +83,8 @@ export interface ValidationEntry {
   check_scope: CheckScope;
   confidence: EntryConfidence;
   evidence: Record<string, unknown> | null;
+  /** Present on `rename_symbol` success entries (`parse_scope_file` + report payload). */
+  rename_surface_report?: RenameSurfaceReport;
 }
 
 export interface OmittedBlob {
@@ -210,6 +226,8 @@ export type RenameSymbolOp = {
   op: "rename_symbol";
   target_id: string;
   new_name: string;
+  /** When true, best-effort `identifier` rewrite in other snapshot `.ts` files (default false). */
+  cross_file?: boolean;
 } & GeneratorWorkflowAssertion;
 
 /** Cross-file move only; same-file reorder is rejected (`lang.ts.move_unit_same_file`). */

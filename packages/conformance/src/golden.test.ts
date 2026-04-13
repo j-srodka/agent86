@@ -606,3 +606,154 @@ describe("v1 — move_unit (sections 4.3, 8)", () => {
     }
   });
 });
+
+describe("v1 — rename_symbol expansion", () => {
+  async function copyTwoFixtures(a: string, b: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "agent86-rename-"));
+    await copyFile(fixturePath(a), join(dir, a));
+    await copyFile(fixturePath(b), join(dir, b));
+    return dir;
+  }
+
+  it("method rename same-file: declaration, this-call, string literal untouched; rename_surface_report present", async () => {
+    const root = await copyFixtureToTemp("rename_method_simple.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const u = snap.units.find((x) => x.file_path === "rename_method_simple.ts" && x.kind === "method_definition");
+      expect(u).toBeDefined();
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: u!.id, new_name: "renamedFoo" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const text = await readFile(join(root, "rename_method_simple.ts"), "utf8");
+      expect(text).toContain("renamedFoo(): void");
+      expect(text).toContain("this.renamedFoo()");
+      expect(text).toMatch(/const s = "foo"/);
+      const info = report.entries.find((e) => e.rename_surface_report != null);
+      expect(info?.rename_surface_report?.found).toBeGreaterThan(0);
+      expect(info?.rename_surface_report?.rewritten).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("method homonym: two classes with same method name; only targeted class changes", async () => {
+    const root = await copyFixtureToTemp("rename_method_homonym.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const inFile = snap.units
+        .filter((x) => x.file_path === "rename_method_homonym.ts" && x.kind === "method_definition")
+        .sort((a, b) => a.start_byte - b.start_byte);
+      expect(inFile.length).toBe(2);
+      const targetA = inFile[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: targetA.id, new_name: "barA" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const text = await readFile(join(root, "rename_method_homonym.ts"), "utf8");
+      expect(text).toContain("barA(): void");
+      expect(text).toContain("this.barA()");
+      expect(text).toMatch(/class B[\s\S]*foo\(\): void/);
+      expect(text).toContain("this.foo()");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cross-file function rename: declaration and remote call site updated; report aggregates", async () => {
+    const root = await copyTwoFixtures("rename_cross_a.ts", "rename_cross_b.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const ua = snap.units.find((x) => x.file_path === "rename_cross_a.ts");
+      expect(ua).toBeDefined();
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: ua!.id, new_name: "renamedCall", cross_file: true }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const aText = await readFile(join(root, "rename_cross_a.ts"), "utf8");
+      const bText = await readFile(join(root, "rename_cross_b.ts"), "utf8");
+      expect(aText).toContain("export function renamedCall()");
+      expect(bText).toContain("renamedCall()");
+      const info = report.entries.find((e) => e.rename_surface_report != null);
+      expect(info?.rename_surface_report?.found).toBeGreaterThan(0);
+      expect(info?.rename_surface_report?.rewritten).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cross-file best-effort: type position skipped; rename_surface_skipped_refs when skips present", async () => {
+    const root = await copyTwoFixtures("rename_cross_warning_a.ts", "rename_cross_warning_b.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const ua = snap.units.find((x) => x.file_path === "rename_cross_warning_a.ts");
+      expect(ua).toBeDefined();
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: ua!.id, new_name: "fetchGet", cross_file: true }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const info = report.entries.find((e) => e.rename_surface_report != null);
+      const rs = info?.rename_surface_report;
+      expect(rs?.skipped.length).toBeGreaterThan(0);
+      expect(report.entries.some((e) => e.code === "rename_surface_skipped_refs")).toBe(true);
+      expect((rs?.found ?? 0) > (rs?.rewritten ?? 0)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("backward compat: same-file function rename only; default cross_file does not scan other files", async () => {
+    const root = await copyTwoFixtures("rename_cross_a.ts", "rename_cross_b.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const ua = snap.units.find((x) => x.file_path === "rename_cross_a.ts");
+      expect(ua).toBeDefined();
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: ua!.id, new_name: "soloRename" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const aText = await readFile(join(root, "rename_cross_a.ts"), "utf8");
+      const bText = await readFile(join(root, "rename_cross_b.ts"), "utf8");
+      expect(aText).toContain("soloRename");
+      expect(bText).toContain("callMe()");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("backward compat: single-file function rename unchanged behavior", async () => {
+    const root = await copyFixtureToTemp("rename_backward_compat.ts");
+    try {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const u = snap.units[0]!;
+      const report = await applyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: u.id, new_name: "zed" }],
+        toolchainFingerprintAtApply: toolchain,
+      });
+      expect(report.outcome).toBe("success");
+      const text = await readFile(join(root, "rename_backward_compat.ts"), "utf8");
+      expect(text).toContain("export function zed()");
+      expect(text).toContain("return zed()");
+      expect(report.entries.some((e) => e.rename_surface_report != null)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
