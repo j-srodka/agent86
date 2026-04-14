@@ -25,6 +25,7 @@ A small **Agent86** (intermediate representation): a **locked spec** plus a **re
 | [`docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md`](docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md) | **Locked** v0 product spec (agents do not edit in-repo; amendments via `docs/impl/spec-proposals.md` + human apply). |
 | [`docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md`](docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md) | Implementation plan (task order, verification commands). |
 | [`docs/impl/v0-decisions.md`](docs/impl/v0-decisions.md) | Repo-specific behavior: grammar digest, canonical bytes, apply gates, manifest path, etc. |
+| [`docs/writeup/false-positive-problem.md`](docs/writeup/false-positive-problem.md) | Published benchmark writeup — the false positive problem in AI code editing |
 
 ## Repo layout
 
@@ -37,6 +38,8 @@ A small **Agent86** (intermediate representation): a **locked spec** plus a **re
 Collaboration rules: [`AGENTS.md`](AGENTS.md). Cursor rules: [`.cursor/rules/agent86.mdc`](.cursor/rules/agent86.mdc).
 
 ## Running the v0 stack
+
+See [docs/writeup/false-positive-problem.md](docs/writeup/false-positive-problem.md) for benchmark results and methodology.
 
 **Prerequisites:** Node 22+, **pnpm** (see root `package.json` for `packageManager`).
 
