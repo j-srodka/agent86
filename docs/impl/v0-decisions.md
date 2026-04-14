@@ -609,7 +609,7 @@ The locked spec §12.1 lists `format_drift` as **E** in the portable table; **th
 
 **Dependencies (normative):** `@modelcontextprotocol/sdk`, workspace `ts-adapter`, **`zod`** for tool argument validation at the MCP boundary.
 
-### Tool surface (four tools)
+### Tool surface (five tools)
 
 All tools are registered on the MCP server; each delegates to the reference **`ts-adapter`** APIs. JSON shapes use **snake_case** field names at the MCP tool boundary for consistency with wire types in `WorkspaceSnapshot` / `ValidationReport`.
 
@@ -619,6 +619,7 @@ All tools are registered on the MCP server; each delegates to the reference **`t
 | **`list_units`** | `root_path`, optional `file_path` (repo-relative POSIX filter) | **`LogicalUnit[]`** | `materializeSnapshot` then filter `snapshot.units` by `file_path` when set; **sort** by `file_path` then `start_byte` |
 | **`build_workspace_summary`** | `root_path` | **`WorkspaceSummary`** | `materializeSnapshot` then `buildWorkspaceSummary` |
 | **`apply_batch`** | `root_path`, `snapshot`, `ops`, optional `toolchain_fingerprint_at_apply` (**`AdapterFingerprint`** object) | **`ValidationReport`** | `applyBatch({ snapshotRootPath, snapshot, ops, toolchainFingerprintAtApply, … })` — fingerprint serialized to a stable JSON string when provided; when omitted, the server uses the snapshot header’s adapter fingerprint JSON |
+| **`get_session_report`** | *(none — empty object on the wire)* | Session tally JSON (see **get_session_report tool (v2)**) | *(read-only; no adapter call)* |
 
 **Why `list_units` exists:** `materialize_snapshot` returns the full snapshot (large). Agents that only need Tier I addresses for op construction should not be forced to download and parse the entire snapshot first. **`list_units`** is a thin read helper: one root path, optional file filter, deterministic unit ordering — enough to discover **`target_id`** values before calling **`apply_batch`** with a snapshot the agent already holds (from a prior materialize or from its own cache).
 
@@ -810,3 +811,15 @@ Unit ids are SHA-256 hex over a canonical string that includes the **grammar dig
 **No handler shape change required:** **`list_units`** continues to materialize internally and return **`snapshot.units`** with the same sort rule. After **`materialize_snapshot`** uses the combined builder, **`list_units`** automatically returns the **union** of units (subject to optional **`file_path`** filter).
 
 **Note:** **`list_units`** with **`file_path`** set validates the filter path with the same extension routing; unsupported extensions fail at the tool boundary with **`lang.agent86.unsupported_file_extension`**.
+
+### get_session_report tool (v2)
+
+**Date (normative for this repo):** 2026-04-14
+
+- **Session state scope:** Tallies are **process-lifetime** only. Each MCP server OS process starts with zeroed counters (except **`session_start_iso`** set at process start). **Restarting the server** clears all tallies — there is **no** disk persistence.
+
+- **`false_positives_prevented` (normative definition):** The count of **`apply_batch`** invocations that returned **`ValidationReport.outcome === "failure"`** where **at least one** `entries[]` item has **`severity: "error"`**. Each such invocation is one batch the IR **blocked before writing** (no successful adapter commit for that batch outcome) — the closest measurable proxy for “corruption prevented.” This definition is **conservative** (it does not count batches that failed only with warnings or info rows) and **honest** (it does not claim to know what a baseline agent would have written without the IR).
+
+- **No persistence rationale:** The server uses **stdio**; typical hosts (e.g. Cursor) spawn **one process per editor session**. Process exit is the natural reset boundary; persisting tallies would not reflect “session” semantics and would add sync and privacy concerns without a stated product requirement.
+
+- **Wire schema:** Tool name **`get_session_report`**. Arguments are the **empty object `{}`** on the MCP tool boundary (**snake_case** field names on other tools remain unchanged). The tool result is **JSON text** mirroring the in-memory **`SessionState`** object (same snake_case keys as the wire tally).
