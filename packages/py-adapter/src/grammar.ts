@@ -1,3 +1,7 @@
+// MAINTENANCE: When tree-sitter-python version changes in pnpm-lock.yaml, recompute
+// PY_GRAMMAR_DIGEST from the pinned parser artifact (src/parser.c in the installed
+// package) and update this constant. See docs/impl/v0-decisions.md — Python grammar digest.
+
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
