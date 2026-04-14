@@ -9,6 +9,7 @@ import type { LogicalUnit, ValidationEntry, ValidationReport } from "ts-adapter"
 
 import type { CombinedWorkspaceSnapshot } from "./combined-snapshot.js";
 import { wireAgent86Tools } from "./index.js";
+import type { SessionState } from "./session.js";
 
 function firstTextJson(result: unknown): unknown {
   const r = result as { content?: Array<{ type: string; text?: string }> };
@@ -264,6 +265,172 @@ describe("mcp-server smoke", () => {
       expect(res.isError).toBe(true);
       const payload = firstTextJson(res) as { code: string };
       expect(payload.code).toBe("lang.agent86.unsupported_file_extension");
+    });
+  });
+
+  it("get_session_report before other calls returns zeroed state and valid session_start_iso", async () => {
+    await withSmokeClient(async (client) => {
+      const res = await client.callTool({ name: "get_session_report", arguments: {} });
+      expect(res.isError).not.toBe(true);
+      const s = firstTextJson(res) as SessionState;
+      expect(s.ops_submitted).toBe(0);
+      expect(s.batches_submitted).toBe(0);
+      expect(s.snapshots_materialized).toBe(0);
+      expect(s.ts_units_seen).toBe(0);
+      expect(s.session_start_iso).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(Number.isNaN(Date.parse(s.session_start_iso))).toBe(false);
+    });
+  });
+
+  it("get_session_report after materialize_snapshot shows materialization unit counts", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      expect(mat.isError).not.toBe(true);
+      firstTextJson(mat);
+      const rep = await client.callTool({ name: "get_session_report", arguments: {} });
+      expect(rep.isError).not.toBe(true);
+      const s = firstTextJson(rep) as SessionState;
+      expect(s.snapshots_materialized).toBe(1);
+      expect(s.ts_units_seen).toBeGreaterThan(0);
+    });
+  });
+
+  it("get_session_report after successful apply_batch counts succeeded ops", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const units = snap.units
+        .filter((u: LogicalUnit) => u.file_path === "src/smoke.ts")
+        .sort((a: LogicalUnit, b: LogicalUnit) => a.start_byte - b.start_byte);
+      const victim = units.find((u: LogicalUnit) => u.source_text?.includes("beta"));
+      expect(victim).toBeDefined();
+      const app = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: snap,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: victim!.id,
+              new_text: "function beta(): number {\n  return 99;\n}\n",
+            },
+          ],
+        },
+      });
+      expect(app.isError).not.toBe(true);
+      expect((firstTextJson(app) as ValidationReport).outcome).toBe("success");
+      const rep = await client.callTool({ name: "get_session_report", arguments: {} });
+      const s = firstTextJson(rep) as SessionState;
+      expect(s.batches_succeeded).toBe(1);
+      expect(s.ops_succeeded).toBeGreaterThan(0);
+    });
+  });
+
+  it("get_session_report after failed apply_batch counts rejection and false_positives_prevented", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const badId = "0".repeat(64);
+      const app = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: snap,
+          ops: [{ op: "replace_unit", target_id: badId, new_text: "function x() {}" }],
+        },
+      });
+      expect(app.isError).not.toBe(true);
+      expect((firstTextJson(app) as ValidationReport).outcome).toBe("failure");
+      const rep = await client.callTool({ name: "get_session_report", arguments: {} });
+      const s = firstTextJson(rep) as SessionState;
+      expect(s.batches_rejected).toBe(1);
+      expect(s.false_positives_prevented).toBe(1);
+      expect(Object.keys(s.rejection_codes).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("get_session_report cumulative: two successes then one failure", async () => {
+    await withSmokeClient(async (client, root) => {
+      const m0 = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const s0 = firstTextJson(m0) as CombinedWorkspaceSnapshot;
+      const ts0 = s0.units
+        .filter((u: LogicalUnit) => u.file_path === "src/smoke.ts")
+        .sort((a: LogicalUnit, b: LogicalUnit) => a.start_byte - b.start_byte);
+      const beta0 = ts0.find((u: LogicalUnit) => u.source_text?.includes("beta"));
+      expect(beta0).toBeDefined();
+      const a1 = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: s0,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: beta0!.id,
+              new_text: "function beta(): number {\n  return 99;\n}\n",
+            },
+          ],
+        },
+      });
+      expect(a1.isError).not.toBe(true);
+      expect((firstTextJson(a1) as ValidationReport).outcome).toBe("success");
+
+      const m1 = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const s1 = firstTextJson(m1) as CombinedWorkspaceSnapshot;
+      const ts1 = s1.units
+        .filter((u: LogicalUnit) => u.file_path === "src/smoke.ts")
+        .sort((a: LogicalUnit, b: LogicalUnit) => a.start_byte - b.start_byte);
+      const alpha1 = ts1.find((u: LogicalUnit) => u.source_text?.includes("alpha"));
+      expect(alpha1).toBeDefined();
+      const a2 = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: s1,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: alpha1!.id,
+              new_text: "function alpha(): number {\n  return 77;\n}\n",
+            },
+          ],
+        },
+      });
+      expect(a2.isError).not.toBe(true);
+      expect((firstTextJson(a2) as ValidationReport).outcome).toBe("success");
+
+      const badId = "f".repeat(64);
+      const a3 = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: s1,
+          ops: [{ op: "replace_unit", target_id: badId, new_text: "function x() {}" }],
+        },
+      });
+      expect(a3.isError).not.toBe(true);
+      expect((firstTextJson(a3) as ValidationReport).outcome).toBe("failure");
+
+      const rep = await client.callTool({ name: "get_session_report", arguments: {} });
+      const s = firstTextJson(rep) as SessionState;
+      expect(s.batches_submitted).toBe(3);
+      expect(s.false_positives_prevented).toBe(1);
     });
   });
 });

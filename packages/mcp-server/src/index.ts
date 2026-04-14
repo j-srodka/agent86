@@ -4,16 +4,20 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 
+import { beginMcpServerSession } from "./session.js";
 import { registerTool as registerApplyBatch } from "./tools/apply.js";
+import { registerTool as registerGetSessionReport } from "./tools/get-session-report.js";
 import { registerTool as registerListUnits } from "./tools/list-units.js";
 import { registerTool as registerMaterializeSnapshot } from "./tools/materialize.js";
 import { registerTool as registerWorkspaceSummary } from "./tools/summary.js";
 
 export function wireAgent86Tools(server: McpServer): void {
+  beginMcpServerSession();
   registerMaterializeSnapshot(server);
   registerListUnits(server);
   registerWorkspaceSummary(server);
   registerApplyBatch(server);
+  registerGetSessionReport(server);
 }
 
 async function main(): Promise<void> {

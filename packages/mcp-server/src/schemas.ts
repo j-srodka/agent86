@@ -14,6 +14,12 @@ export const buildWorkspaceSummaryInputSchema = z.object({
   root_path: z.string().min(1),
 });
 
+/** No tool arguments; hosts may omit the key — normalize to `{}` before strict empty-object parse. */
+export const getSessionReportInputSchema = z.preprocess(
+  (v) => (v === undefined || v === null ? {} : v),
+  z.object({}).strict(),
+);
+
 const adapterFingerprintSchema = z.object({
   name: z.string(),
   semver: z.string(),

@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { resolve } from "node:path";
 import { applyBatch as pyApplyBatch } from "@agent86/py-adapter";
 import type { ValidationEntry, ValidationReport, V0Op, WorkspaceSnapshot } from "ts-adapter";
@@ -20,6 +21,7 @@ import {
 import { jsonToolError, jsonToolSuccess, runToolHandler, zodToToolInputError } from "../errors.js";
 import { assertSupportedLanguage, languageForPath } from "../router.js";
 import { applyBatchInputSchema } from "../schemas.js";
+import { recordApplyBatch } from "../session.js";
 import { isV0OpArray, isWorkspaceSnapshot } from "../snapshot-guards.js";
 
 function fingerprintToAuditString(fp: AdapterFingerprint): string {
@@ -88,6 +90,11 @@ function isCombinedSnapshotInput(v: unknown): v is CombinedWorkspaceSnapshot {
   return typeof g.ts === "string" && typeof g.py === "string";
 }
 
+function applyBatchToolSuccess(report: ValidationReport, opCount: number): CallToolResult {
+  recordApplyBatch(report, opCount);
+  return jsonToolSuccess(report);
+}
+
 export function registerTool(server: McpServer): void {
   server.registerTool(
     "apply_batch",
@@ -124,7 +131,7 @@ export function registerTool(server: McpServer): void {
             : fingerprintToAuditString(combined.adapter);
 
         if (typedOps.length > combined.adapter.max_batch_ops) {
-          return jsonToolSuccess(
+          return applyBatchToolSuccess(
             buildFailureReport({
               snapshot_id: combined.snapshot_id,
               adapter: combined.adapter,
@@ -144,6 +151,7 @@ export function registerTool(server: McpServer): void {
               ],
               omitted_due_to_size: omittedBlobsFromExternalizedUnits(combined),
             }),
+            typedOps.length,
           );
         }
 
@@ -153,7 +161,7 @@ export function registerTool(server: McpServer): void {
           const op = typedOps[opIndex]!;
           const tr = resolveOpTarget(snapView, op.target_id);
           if (tr.kind === "ghost" || tr.kind === "unknown") {
-            return jsonToolSuccess(
+            return applyBatchToolSuccess(
               buildFailureReport({
                 snapshot_id: combined.snapshot_id,
                 adapter: combined.adapter,
@@ -161,6 +169,7 @@ export function registerTool(server: McpServer): void {
                 entries: [resolveFailureEntry(tr, opIndex)],
                 omitted_due_to_size: omittedBlobsFromExternalizedUnits(combined),
               }),
+              typedOps.length,
             );
           }
           assertSupportedLanguage(tr.unit.file_path);
@@ -240,7 +249,7 @@ export function registerTool(server: McpServer): void {
           toolchain_fingerprint_at_apply: toolchain,
         };
 
-        return jsonToolSuccess(report);
+        return applyBatchToolSuccess(report, typedOps.length);
       });
     },
   );

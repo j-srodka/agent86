@@ -49,6 +49,32 @@ rather than the workspace root.
 
 **v3 roadmap:** `.gitignore`-aware file walking and optional `.agent86ignore` exclusion file.
 
+## Session report
+
+Call `get_session_report` at any time to see what the IR has done since the server started:
+
+```json
+{
+  "ops_submitted": 42,
+  "ops_succeeded": 39,
+  "ops_rejected": 3,
+  "batches_submitted": 8,
+  "batches_succeeded": 7,
+  "batches_rejected": 1,
+  "false_positives_prevented": 1,
+  "rejection_codes": { "snapshot_content_mismatch": 1 },
+  "warnings_emitted": { "lang.ts.cross_file_rename_broad_match": 2 },
+  "snapshots_materialized": 4,
+  "ts_units_seen": 61,
+  "py_units_seen": 24,
+  "session_start_iso": "2026-04-14T..."
+}
+```
+
+**`false_positives_prevented`** is the count of rejected batches where at least one entry had `severity: "error"` — the IR blocked those writes before any file was touched. This is the conservative "gain" signal: it does not claim to know what the agent would have written without IR, only that a gate fired and no mutation occurred.
+
+State resets when the server process restarts (i.e. when Cursor restarts or you restart the MCP server manually).
+
 ## Claude Code
 
 Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the MCP config path your Claude Code build expects), pointing at this package’s `dist/index.js`.
@@ -61,6 +87,7 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 | `list_units` | `{ root_path: string, file_path?: string }` | `LogicalUnit[]` |
 | `build_workspace_summary` | `{ root_path: string }` | `WorkspaceSummary` (adds `grammar_digests`; `manifest_url` from ts read path) |
 | `apply_batch` | `{ root_path: string, snapshot: WorkspaceSnapshot, ops: V0Op[], toolchain_fingerprint_at_apply?: AdapterFingerprint }` | `ValidationReport` |
+| `get_session_report` | `{}` | Session tally JSON (`ops_submitted`, `batches_*`, `false_positives_prevented`, `rejection_codes`, `warnings_emitted`, unit counts, `session_start_iso`) |
 
 `AdapterFingerprint` is `{ name, semver, grammar_digest, max_batch_ops }`. When `toolchain_fingerprint_at_apply` is omitted, the server audits using the snapshot header adapter.
 

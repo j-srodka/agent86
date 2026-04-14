@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { materializeCombinedSnapshot } from "../combined-snapshot.js";
 import { jsonToolSuccess, runToolHandler, zodToToolInputError } from "../errors.js";
 import { materializeSnapshotInputSchema } from "../schemas.js";
+import { recordMaterialize } from "../session.js";
 
 export function registerTool(server: McpServer): void {
   server.registerTool(
@@ -21,6 +22,7 @@ export function registerTool(server: McpServer): void {
           rootPath: resolve(parsed.data.root_path),
           inline_threshold_bytes: parsed.data.inline_threshold_bytes,
         });
+        recordMaterialize(snap);
         return jsonToolSuccess(snap);
       });
     },
