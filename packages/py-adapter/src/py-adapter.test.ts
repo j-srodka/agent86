@@ -112,6 +112,23 @@ describe("materializeSnapshot", () => {
     expect(snap1.units.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("class method unit IDs are identical across two materializeSnapshot calls", async () => {
+    await writePy(
+      dir,
+      "methods.py",
+      ["class C:", "    def first(self):", "        pass", "", "    def second(self):", "        pass", ""].join("\n"),
+    );
+    const snap1 = await materializeSnapshot({ rootPath: dir });
+    const snap2 = await materializeSnapshot({ rootPath: dir });
+    const methodIds = (s: typeof snap1) =>
+      s.units
+        .filter((u) => u.file_path === "methods.py" && u.kind === "function_definition")
+        .sort((a, b) => a.start_byte - b.start_byte)
+        .map((u) => u.id);
+    expect(methodIds(snap1)).toEqual(methodIds(snap2));
+    expect(methodIds(snap1)).toHaveLength(2);
+  });
+
   it("skips __pycache__ dirs", async () => {
     await writePy(dir, "ok.py", "x = 1\n");
     await mkdir(join(dir, "__pycache__"), { recursive: true });
