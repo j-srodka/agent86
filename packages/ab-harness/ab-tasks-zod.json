@@ -6,7 +6,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "d646bbcdf4048ae3ed40ffa19d3936abd70afd79c34f96e81b31c2005ebeb02c",
+      "target_unit_id": "10aa14eb3b053d51f0c870c6545af8ca3e6bc85a5c9cd0267bf2baad5f10bd2d",
       "file_path": "packages/zod/src/v4/locales/id.ts",
       "has_homonym": false
     },
@@ -15,7 +15,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "5bdb6266fc1ba7a0a6219d50396c3556b560d6ce499e13a18b72199b3ae016ff",
+      "target_unit_id": "212b0cde073ddd1cfcdfc1023a79152b7ba2bb8bb26c5018893f3799ffee8267",
       "file_path": "packages/zod/src/v4/mini/iso.ts",
       "has_homonym": false
     },
@@ -24,7 +24,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "557de7457d5a48e44e589a6cad10e2d04d22c5c110cb48a4add9417e4cc0da01",
+      "target_unit_id": "7b7bd1b784b613a6965600b00bbb9773d3dbf7714876eedd014c3213d22ce59d",
       "file_path": "packages/zod/src/v4/core/core.ts",
       "has_homonym": false
     },
@@ -33,7 +33,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "d1b483782d245b469abe2e95bc25b0a212fd8dba1479b22b709660658da6ad04",
+      "target_unit_id": "437ec1a8d7d87ce41a0102ff16c8334918960ca2553a01d4ccb1b179539e12d7",
       "file_path": "packages/zod/src/v4/core/util.ts",
       "has_homonym": false
     },
@@ -42,7 +42,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "562676549abc2a1018b800f15826995f1ef2edf0a62134b1cb5a0379d144be0a",
+      "target_unit_id": "488e1aa11b03a7b5bbbd40a32c2fad5ab93064dde4dd9f848b891efd2e91704c",
       "file_path": "packages/zod/src/v4/locales/eo.ts",
       "has_homonym": false
     },
@@ -51,7 +51,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "68273f02fcd2f94de0ab3dd9b1a8167f6072f3622f6321469311332c181a2935",
+      "target_unit_id": "a43a08fc7accfe2f9508b30f61a3d6a657d62322da508c09237aa1d92cd372a9",
       "file_path": "packages/tsc/generate.ts",
       "has_homonym": false
     },
@@ -60,7 +60,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "53b19e2a58af5de71fd1f44ed9ec4dc81e9c3c3c81d7b6ab01860befba01ed31",
+      "target_unit_id": "cf9663ec1ba332e3641c9f061c73007198216ab69f68d0de2ad0cf7e7da1d26a",
       "file_path": "packages/zod/src/v4/classic/iso.ts",
       "has_homonym": false
     },
@@ -69,7 +69,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "aad8d975c99bd0d1312281f5135834d30b711807008efb4320c57b1cc6b0905a",
+      "target_unit_id": "03d8f95cd4d92dbdbcbae7074b961b171a11d858e9906bf45531801850dd66e4",
       "file_path": "packages/zod/src/v3/helpers/util.ts",
       "has_homonym": false
     },
@@ -78,7 +78,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "78cd4974448f0c4efcf9ad6a93a7446d5c508175c7835dff838f1764cf077df4",
+      "target_unit_id": "3272a603c9bb55a8048f4d72c3f3cf4f92a92292651a865ef4ff7eb1bb67ce97",
       "file_path": "packages/zod/src/v4/locales/th.ts",
       "has_homonym": false
     },
@@ -87,7 +87,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "8feffd951438617d1e9c1a696dc08ca22595c98a25923747b4984bc8a0222daf",
+      "target_unit_id": "2d5bd7405ba98f2f13facf09f9bef741063e9f1ccde82022e9c36d33b703850a",
       "file_path": "packages/zod/src/v4/locales/lt.ts",
       "has_homonym": false
     },
@@ -96,7 +96,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "db92473f0890e6c0d547e403034180223264969e641c2a340733a9e8f5c48762",
+      "target_unit_id": "f0ba1b205a486fabeda0e3400ec343accb19e18abf0f00bbf44cfcd7c287689a",
       "file_path": "packages/zod/src/v4/locales/km.ts",
       "has_homonym": false
     },
@@ -105,7 +105,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "replace_unit",
-      "target_unit_id": "86dce4af08d9451efb1e10dcccf7c88a36cb3a3a8eb32d1c8164259326f74557",
+      "target_unit_id": "8c78e15b64b3eaf4b6edf8895e7d7572cc27a1dc49d09ff7f3ee5675b9427a6d",
       "file_path": "packages/zod/src/v4/core/util.ts",
       "has_homonym": false
     },
@@ -114,7 +114,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "557de7457d5a48e44e589a6cad10e2d04d22c5c110cb48a4add9417e4cc0da01",
+      "target_unit_id": "7b7bd1b784b613a6965600b00bbb9773d3dbf7714876eedd014c3213d22ce59d",
       "file_path": "packages/zod/src/v4/core/core.ts",
       "rename_to": "renamed_zod_ren_12",
       "has_homonym": true
@@ -124,7 +124,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "f08311c2d4f3ee474c1da7b2a9d288d9e00e42779c044dafef5743bfdce624a3",
+      "target_unit_id": "d28ca7346f40405abe3be0ee1933ef3a84a7e16746629b8d9b66ec553546b299",
       "file_path": "packages/zod/src/v4/classic/tests/generics.test.ts",
       "rename_to": "renamed_zod_ren_13",
       "has_homonym": true
@@ -134,7 +134,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "50fdfd0014c4314bca9de1e8bd0e9187e570d69126a5933f71f945cd0a97d3b7",
+      "target_unit_id": "619068acf59b89ae6d243e23c86fd8f44bf6b291546a6b9f1244ecdf6b4f6da9",
       "file_path": "packages/tsc/generate.ts",
       "rename_to": "renamed_zod_ren_14",
       "has_homonym": true
@@ -144,7 +144,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "8cc17b8699c0254755657e62c6c242ea3f9f261e1cd1b4447140a27374508a78",
+      "target_unit_id": "5a0250162bb9a9f45312fa9979b48bdc3298726b122a0301cf178672410ada19",
       "file_path": "packages/zod/src/v4/mini/iso.ts",
       "rename_to": "renamed_zod_ren_15",
       "has_homonym": true
@@ -154,7 +154,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "3d3d796c607e904ff08d5e8c9283837004ccdfe8e0d1bf6a2eeb2c0abaae2062",
+      "target_unit_id": "7e814e98a244e58bcabbda379b913f507429252fb049414af273760ea054e9d9",
       "file_path": "packages/zod/src/v4/core/core.ts",
       "rename_to": "renamed_zod_ren_16",
       "has_homonym": true
@@ -164,7 +164,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "68273f02fcd2f94de0ab3dd9b1a8167f6072f3622f6321469311332c181a2935",
+      "target_unit_id": "a43a08fc7accfe2f9508b30f61a3d6a657d62322da508c09237aa1d92cd372a9",
       "file_path": "packages/tsc/generate.ts",
       "rename_to": "renamed_zod_ren_17",
       "has_homonym": true
@@ -174,7 +174,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "8014daaf5b4198f19c90313f723add070c58c74870a3b25da1be50d90c1fa12b",
+      "target_unit_id": "45dc75c1705fd423d8db79642560cbcdb654fadf6605bacad0615f9bda13bb4d",
       "file_path": "packages/zod/src/v4/core/errors.ts",
       "rename_to": "renamed_zod_ren_18",
       "has_homonym": true
@@ -184,7 +184,7 @@
       "repo": "zod",
       "language": "typescript",
       "task_category": "rename_symbol",
-      "target_unit_id": "8368c31d441baf1a15efd6830ecf4e415c8aaa199d83bbe48562db480371f888",
+      "target_unit_id": "e1316a21755c4a36bcf8b0474eb95e2cd0be79539d3e34bdc8b2ac275e8dab2b",
       "file_path": "packages/bench/safe.ts",
       "rename_to": "renamed_zod_ren_19",
       "has_homonym": true

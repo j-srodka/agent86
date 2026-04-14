@@ -6,7 +6,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "7b8672b342b1012587d154a8e0a43ec1753fc4785a06e20bea9b397d2f14a062",
+      "target_unit_id": "ea250baec957e2ea47051b530bde68f3cdd27f2ba345b7197d99a3b0d71ff543",
       "file_path": "scripts/check_ecosystem.py",
       "has_homonym": false
     },
@@ -15,7 +15,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "2efb866d79a407fce34362e9f6f3e2cad3faaee96c1e11d4966c00117d72ad7c",
+      "target_unit_id": "00d2a0d832eff342c4297daa318604c49b21cf43fe2bb39d0828b61e5e03420c",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_pie/PIE796.py",
       "has_homonym": false
     },
@@ -24,7 +24,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "166baaf836a2d7ff299c2f4f5d9d1c9be0d84e73882a1c0c9b877c20a1167ec5",
+      "target_unit_id": "51d54112b7e3f48a3f572e453229a10d269294467bd2d6bd03c69c3d1d4bd7f4",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_django/DJ008.py",
       "has_homonym": false
     },
@@ -33,7 +33,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "5494706b271d86d7dac722e487116612203a0ec4aafc96f1929a42a7c511c171",
+      "target_unit_id": "74ba8a340794f86defb271a95319cfea9f9d75dcf5e3207d4ebf300b6303cac1",
       "file_path": "crates/ruff_linter/resources/test/fixtures/pydocstyle/D300.py",
       "has_homonym": false
     },
@@ -42,7 +42,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "90bf728cec9c2151c14b4de40632292347ed9a7c2b7cafa545204162683cb723",
+      "target_unit_id": "604d6532df9e1e7bcd5b42725508cbdb81628b2cb535306b1862468ae41cc404",
       "file_path": "crates/ruff_linter/resources/test/fixtures/pycodestyle/W391_0.py",
       "has_homonym": false
     },
@@ -51,7 +51,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "9106b1ccfaa4218d1a6b765ffd2b4d9ee0ed5fd55f23f00ec9686344636b3594",
+      "target_unit_id": "1fa212ccfdeb993abbf168f126116c645c1cc5a64226a36b2ded8e6530698406",
       "file_path": "crates/ruff_python_formatter/resources/test/fixtures/ruff/statement/function.py",
       "has_homonym": false
     },
@@ -60,7 +60,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "06d8dab24615a047ec47f4a3a486a6676d2649a28a1c672fb81d059645ba5510",
+      "target_unit_id": "58ff797f79324a578334faa866400b9440ccbd53d5f4441ea3ab3f2b1afde1ca",
       "file_path": "crates/ruff_linter/resources/test/fixtures/syntax_errors/async_comprehension.py",
       "has_homonym": false
     },
@@ -69,7 +69,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "429840e56a94cb9eedbc55cf2e1937370807d60a26cc711101e877af754d94cb",
+      "target_unit_id": "34eb609ed79c030ead3edbfe995ccc6a5bf0733ae8e36a2b74fad2126d2e1fac",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_simplify/SIM110.py",
       "has_homonym": false
     },
@@ -78,7 +78,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "dc05ce85e7a5d84cd0e1b69763de7d4dc2d605ff73389f9df437ded9c754846e",
+      "target_unit_id": "b6b6e053aad16dfa7e98b5e27518c7dd03c38262cf55be4d5269f39e8a81d23b",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_return/RET503.py",
       "has_homonym": false
     },
@@ -87,7 +87,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "e21466c2170b05858c7cd9fff481f152996f2b1d6887922216cb87336fd286b1",
+      "target_unit_id": "a84071f201aeb21897a38bacb4b6fee3dc87b923d2b48fbacc375a56ff99ba73",
       "file_path": "crates/ruff_linter/resources/test/fixtures/pycodestyle/E30.py",
       "has_homonym": false
     },
@@ -96,7 +96,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "ba93e011598bea8c3f16e8d1b14232da8f0c133811023bd2e344b9a03a36f844",
+      "target_unit_id": "99106c70fa15b5ac3395b7942b1eafefbe59141d56956efcaafbb395dd702efb",
       "file_path": "crates/ruff_linter/resources/test/fixtures/control-flow-graph/simple.py",
       "has_homonym": false
     },
@@ -105,7 +105,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "replace_unit",
-      "target_unit_id": "bbd376264ae40b49f87b64faba14a3974c31d3d506e961c7734ea9df4ce19062",
+      "target_unit_id": "9c169133adeee3a6b493225ae9c7ce66e5e4d726b7fbac5dc65c01605cccfda3",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_pie/PIE796.py",
       "has_homonym": false
     },
@@ -114,7 +114,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "e9189c2a956dfb6ce2b8407da978dedad6a4f37fe7b879d91a59e0defb6f6922",
+      "target_unit_id": "b707cc99a98e6c2f2ca5c0295cc13c2d5c7e53cec60b32a925601e397104dae2",
       "file_path": "crates/ruff_python_formatter/resources/test/fixtures/ruff/newlines.py",
       "rename_to": "renamed_ruff_ren_12",
       "has_homonym": true
@@ -124,7 +124,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "dc7ebcd2a80028a4e791fe0a175893bde1a4f5233aff0a9aed5326c9d800a63b",
+      "target_unit_id": "0f5ebbedf264ae5d588586010ea83e4a09eb0d16598253c90001e8a6cc15be43",
       "file_path": "crates/ruff_linter/resources/test/fixtures/pycodestyle/E721.py",
       "rename_to": "renamed_ruff_ren_13",
       "has_homonym": true
@@ -134,7 +134,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "f8afdaa3751ca7f28ff4b85fc175c142e6d46092f83ad2afc01c2aaf83e3c390",
+      "target_unit_id": "2efa80f78938950c4ed025f6ded70e85159c7de43e43be012f86497e82eb8108",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_logging/LOG002.py",
       "rename_to": "renamed_ruff_ren_14",
       "has_homonym": true
@@ -144,7 +144,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "6c1de577910dcf0886779016c7d605fa1186b6f8ee1c61af0a72c538471e5288",
+      "target_unit_id": "6da645860d5dfd4c0029bc4ef54db13ffaa09e13caf5294623e137debe52e800",
       "file_path": "crates/ruff_linter/resources/test/fixtures/pydocstyle/D410.py",
       "rename_to": "renamed_ruff_ren_15",
       "has_homonym": true
@@ -154,7 +154,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "005604380968e7128bd983c417088cbd29d96b4250935ba52d10e579970619c3",
+      "target_unit_id": "79fb99e5889eb8f29353489558243e18a0cd0d50e19c1ebac082b3b8ef288252",
       "file_path": "crates/ruff_python_formatter/resources/test/fixtures/ruff/statement/class_definition.py",
       "rename_to": "renamed_ruff_ren_16",
       "has_homonym": true
@@ -164,7 +164,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "6fe191f3842210db9b01410318c29df1b8b91dd3317e4bdd835239c3bd98303e",
+      "target_unit_id": "7445645c40fec271eaace38e4c7f893506423d9604c5770249dc845178625020",
       "file_path": "crates/ruff_linter/resources/test/fixtures/pyupgrade/UP028_0.py",
       "rename_to": "renamed_ruff_ren_17",
       "has_homonym": true
@@ -174,7 +174,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "2709e32710da0a39f61f087163393aec4c6b237823f982883d725452bdf42ecd",
+      "target_unit_id": "c00f03ce8c02c6eb9518ed2a485d9f3ef3ba289819f6ff147e58e56316b0e2e9",
       "file_path": "crates/ruff_linter/resources/test/fixtures/ruff/RUF013_0.py",
       "rename_to": "renamed_ruff_ren_18",
       "has_homonym": true
@@ -184,7 +184,7 @@
       "repo": "ruff",
       "language": "python",
       "task_category": "rename_symbol",
-      "target_unit_id": "a28d883c1967fe35d471e6674329cf17e73599bf8f4f90fe5b1cbb38346d88b1",
+      "target_unit_id": "221fa899cc9b686c065799e2bf38cc420a7453989f9f083ccb6b5f691c45875e",
       "file_path": "crates/ruff_linter/resources/test/fixtures/flake8_pyi/PYI034.py",
       "rename_to": "renamed_ruff_ren_19",
       "has_homonym": true

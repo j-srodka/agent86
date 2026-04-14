@@ -14,7 +14,7 @@
     "zod": {
       "url": "https://github.com/colinhacks/zod.git",
       "rev": "c7805073fef5b6b8857307c3d4b3597a70613bc2",
-      "snapshot_root": "/Users/jsrodka/Github/agent86/.cache/ab-target/zod",
+      "snapshot_root": "/Users/jsrodka/Github/agent86/.claude/worktrees/nice-davinci/.cache/ab-target/zod",
       "task_count": 20,
       "skipped_files": [
         {
@@ -760,7 +760,7 @@
     "prettier": {
       "url": "https://github.com/prettier/prettier.git",
       "rev": "aa89018858e8af2a53a5b7a7dfbb724f6f29921b",
-      "snapshot_root": "/Users/jsrodka/Github/agent86/.cache/ab-prettier/prettier",
+      "snapshot_root": "/Users/jsrodka/Github/agent86/.claude/worktrees/nice-davinci/.cache/ab-prettier/prettier",
       "task_count": 20,
       "skipped_files": [
         {
@@ -1451,7 +1451,7 @@
     "ruff": {
       "url": "https://github.com/astral-sh/ruff.git",
       "rev": "c378604d2c5f8a2e210863e7757e32291c87c87c",
-      "snapshot_root": "/Users/jsrodka/Github/agent86/.cache/ab-ruff/ruff",
+      "snapshot_root": "/Users/jsrodka/Github/agent86/.claude/worktrees/nice-davinci/.cache/ab-ruff/ruff",
       "task_count": 20,
       "skipped_files": [],
       "baseline": {
