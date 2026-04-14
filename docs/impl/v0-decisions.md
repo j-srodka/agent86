@@ -734,3 +734,78 @@ After py-adapter is green (all 8+ conformance tests pass):
 - Task counts for Ruff may change (real grammar detects more method-level units than top-level-only stub) — expected and honest; document the change in the commit message.
 - If IR false positives > 0: stop and report to human before committing. Do not commit a degraded artifact.
 - Updated canonical artifact: `packages/ab-harness/ab-metrics-expanded.json` with `language: "python"` for Ruff tasks (replacing `python_stub`).
+
+---
+
+## MCP mixed-language routing (v2)
+
+**Date (normative for this repo):** 2026-04-14
+
+### Routing rule
+
+**Extension only — no content sniffing, no shebang detection.** The MCP server decides which reference adapter materializes or applies to a path using the filename only (POSIX path semantics after normalizing separators).
+
+| Extension | Adapter |
+| --------- | ------- |
+| **`.ts`** (but not **`.tsx`**) | `ts-adapter` |
+| **`.py`** | `py-adapter` |
+
+**`.tsx`:** Unchanged from v1 — never parsed as TypeScript by `ts-adapter`; paths are listed in **`skipped_tsx_paths`** on the TypeScript materialization leg only. This session does not add TSX handling.
+
+**Unsupported paths:** If a tool must route a concrete path (e.g. optional `file_path` on **`list_units`**, or a **`LogicalUnit.file_path`** for an op target) and the extension is not **`.ts`**, **`.py`**, or the TSX skip case above, the MCP tool boundary returns **`isError: true`** with code **`lang.agent86.unsupported_file_extension`**. The **`message`** states the extension and lists supported extensions **`.ts`** and **`.py`**. Arbitrary other files in the workspace (e.g. `README.md`, `package.json`) are **not** scanned for routing; only paths that the tools explicitly resolve against the routing key are rejected.
+
+### Combined snapshot shape (MCP wire)
+
+A single invocation still returns **one** JSON object shaped like **`WorkspaceSnapshot`**, with these **MCP v2 extensions**:
+
+1. **`grammar_digests`** (object, **always** present on **`materialize_snapshot`** and **`build_workspace_summary`** MCP outputs from this server):  
+   `{ "ts": "<GRAMMAR_DIGEST_V0 hex>", "py": "<PY_GRAMMAR_DIGEST hex>" }`  
+   Values are the same pinned constants as each adapter’s header digest. This does **not** change per-adapter snapshot headers when materializing **`.ts`** or **`.py`** alone.
+
+2. **Backward compatibility — `grammar_digest` (string):** When the workspace contains at least one tracked **`.ts`** file in the combined **`files[]`**, **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`** (same as historical ts-only MCP snapshots). When there are **no** **`.ts`** files but there is at least one **`.py`** file, **`grammar_digest`** is **`PY_GRAMMAR_DIGEST`**. When neither language is present (empty tracked set), **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`**. Callers that only read the legacy string should prefer **`grammar_digests`** for mixed or Python-primary roots.
+
+3. **`units[]` ordering:** All units from the **ts-adapter** materialization appear **first** (in the adapter’s existing deterministic order), followed by all units from the **py-adapter** materialization (adapter order). **`files[]`** is the **sorted union** of both adapters’ **`files[]`** by **`path`** (ascending).
+
+4. **`snapshot_id` (combined):** Let **`ts_id`** be **`snapshot_id`** from **`materializeSnapshot`** of the **ts-adapter** on the same root (same inline-threshold and merge options as the MCP call), and **`py_id`** from **py-adapter** **`materializeSnapshot`** on the same root. Sort **`[ts_id, py_id]`** lexicographically as UTF-8 strings, join with a single **U+000A** (`\n`) between the first and second string (no trailing newline), UTF-8-encode that string, and set **`combined_snapshot_id = SHA-256` (lowercase hex)** of those bytes. This is the **`snapshot_id`** on the combined **`WorkspaceSnapshot`** returned to the agent.
+
+5. **`id_resolve`:** Map is the shallow merge of the ts snapshot’s **`id_resolve`** and the py snapshot’s **`id_resolve`** (disjoint keys in normal operation).
+
+6. **`skipped_tsx_paths`:** Taken **only** from the ts-adapter materialization (py-adapter emits **`[]`**).
+
+7. **`skipped_ts_parse_throw`:** Concatenation of both adapters’ parse-throw lists, sorted by **`file_path`**.
+
+8. **`adapter` (`AdapterFingerprint` on the combined header):** **`V0_ADAPTER_FINGERPRINT`** when **`files[]`** contains at least one **`.ts`** path; otherwise **`PY_ADAPTER_FINGERPRINT`** when **`files[]`** contains at least one **`.py`** path; if **`files[]`** is empty, **`V0_ADAPTER_FINGERPRINT`** (nominal default).
+
+### `apply_batch` dispatch (MCP)
+
+For each op, **`target_id`** is resolved on the **combined** snapshot (live unit lookup and **`id_resolve`** forwarding, same semantics as a single adapter). The owning adapter is determined from the resolved unit’s **`file_path`** extension (**`.ts`** → ts-adapter, **`.py`** → py-adapter). Ops are partitioned into two batches. **Before** calling either adapter, if any **`target_id`** is **unknown** (not live and not resolvable via **`id_resolve`** to a live unit), the tool returns a **successful** tool payload with **`ValidationReport.outcome === "failure"`** and a normative **`unknown_or_superseded_id`** entry (no adapter dispatch). **`ghost_unit`** continues to apply when **`id_resolve`** maps to a non-live id.
+
+If a resolved unit’s **`file_path`** is not routable (**`lang.agent86.unsupported_file_extension`**), the MCP tool returns **`isError: true`** at the tool boundary (not a **`ValidationReport`**).
+
+**Subset snapshots:** Each adapter receives a **synthetic** **`WorkspaceSnapshot`** containing only that adapter’s **`files[]`**, **`units[]`**, and the full combined **`id_resolve`**, with **`grammar_digest`**, **`adapter`**, and **`snapshot_id`** set so the adapter’s §9 gates pass (**`snapshot_id`** is the **combined** id for telemetry consistency).
+
+**Op batch size:** The combined **`ops.length`** is checked against **`max_batch_ops`** (50) **before** partition. Each adapter sees at most the same total count.
+
+**Call order:** **ts-adapter** **`applyBatch`** runs first (if any ts ops), then **py-adapter** **`applyBatch`** (if any py ops).
+
+**`ValidationReport` merge:** **`outcome`** is **`failure`** if either adapter returns **`failure`** (or **`partial`** treated as non-success for this merge). **`entries`** are concatenated in order: ts adapter report entries, then py adapter entries. **`omitted_due_to_size`** entries are merged and sorted by **`ref`**. **`id_resolve_delta`** maps are shallow-merged (py keys after ts). **`toolchain_fingerprint_at_apply`** echoes the request. **`snapshot_id`** is the combined input id. **`adapter`** on the merged report matches the **combined** snapshot header fingerprint. **`next_snapshot_id`:** after **both** adapter calls succeed, the server re-runs combined materialization on the root and sets **`next_snapshot_id`** to that fresh **`combined_snapshot_id`**; on any failure **`next_snapshot_id`** is **`null`**.
+
+### Cross-adapter atomicity (known limitation)
+
+There is **no** cross-adapter rollback. If the ts batch succeeds and the py batch then **fails**, **disk state reflects ts writes** while the merged **`ValidationReport`** reports **`failure`**. Full atomicity across languages is **out of scope for v2**.
+
+### Tier I `target_id` collision guarantee
+
+Unit ids are SHA-256 hex over a canonical string that includes the **grammar digest** (ts vs py constants differ), **`snapshot_root`**, **`file_path`**, byte range, and **kind**. Ts and py digests are **different hex strings**, so the hashed payload differs for any identical path/coordinates across languages. **No extra prefix** is required; **`.ts`** and **`.py`** unit ids cannot collide assuming one workspace root.
+
+### `lang.*` extension (MCP tool boundary)
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| **`lang.agent86.unsupported_file_extension`** | error (tool error) | Path extension is not **`.ts`** or **`.py`** (and not a routable case); **`evidence`** includes **`file_path`**, **`extension`**, and **`supported_extensions: [".ts", ".py"]`**. |
+
+### `list_units`
+
+**No handler shape change required:** **`list_units`** continues to materialize internally and return **`snapshot.units`** with the same sort rule. After **`materialize_snapshot`** uses the combined builder, **`list_units`** automatically returns the **union** of units (subject to optional **`file_path`** filter).
+
+**Note:** **`list_units`** with **`file_path`** set validates the filter path with the same extension routing; unsupported extensions fail at the tool boundary with **`lang.agent86.unsupported_file_extension`**.
