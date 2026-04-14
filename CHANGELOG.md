@@ -1,9 +1,15 @@
 ## [Unreleased]
 
+## [2.0.0] — 2026-04-14
+
 - MCP stdio server (@agent86/mcp-server): four tools
   (materialize_snapshot, list_units, build_workspace_summary,
   apply_batch); Cursor and Claude Code integration via stdio
-- Python tree-sitter adapter (@agent86/py-adapter): in progress
+- Python tree-sitter adapter (@agent86/py-adapter): Tree-sitter
+  Python grammar, Tier I units, replace_unit / rename_symbol /
+  move_unit, grammar digest gate, and expanded A/B harness Ruff
+  profile wired off the regex stub (IR false positives 0 on
+  canonical three-run benchmark)
 
 ## [v1.0.0] — 2026-04-13
 
