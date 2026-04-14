@@ -29,6 +29,26 @@ Use the path to **built** `dist/index.js` from your clone; adjust `args` to an a
 - **Cross-adapter atomicity:** A single **`apply_batch`** call may run the TypeScript batch and then the Python batch. **There is no cross-language rollback:** if the Python step fails after the TypeScript step succeeded, **TypeScript file changes from that call are already on disk**. Treat multi-language batches accordingly (smaller batches, or separate calls per language, if you need a simpler failure surface).
 - **`.tsx` files:** Still **not** parsed as TypeScript; paths are recorded in **`skipped_tsx_paths`** on the snapshot (same as `ts-adapter` alone).
 
+## Scoping and exclusions
+
+The MCP server snapshots **all** `.ts` and `.py` files found under `root_path`, including subdirectories not tracked by git (e.g. benchmark caches, git worktrees, build outputs). It does **not** currently read `.gitignore` or apply any exclusion list.
+
+**Recommendation:** point `root_path` at the package or subdirectory you want to edit, not at a monorepo or workspace root that contains large non-source trees. For example, if you are editing `packages/my-lib/`, use:
+
+```json
+{ "root_path": "/absolute/path/to/packages/my-lib" }
+```
+
+rather than the workspace root.
+
+**Known side effect of broad root_path:** `rename_symbol` with `cross_file: true` will match identifiers in all scanned files, including cached or generated trees. The `lang.ts.cross_file_rename_broad_match` warning (threshold: 10 occurrences) exists specifically to surface this risk — if you see that warning on a common-name rename, inspect `rename_surface_report.skipped` and `rename_surface_report.rewritten` before committing.
+
+**Real-world example:** after a `rename_symbol` op with `cross_file: true`, cached files under `.cache/` were rewritten but not restored by `git checkout -- .`. A subsequent `apply_batch` using the original snapshot failed with `snapshot_content_mismatch` on a `.cache/` path — not the intended target file. Re-materialize the snapshot after any operation that touches files outside version control.
+
+**`build_workspace_summary` / `omitted_due_to_size`:** Note: the same `ref` may appear more than once if multiple units share identical content and both exceed the inline threshold. This is expected — entries are per-unit, not per unique blob.
+
+**v3 roadmap:** `.gitignore`-aware file walking and optional `.agent86ignore` exclusion file.
+
 ## Claude Code
 
 Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the MCP config path your Claude Code build expects), pointing at this package’s `dist/index.js`.
