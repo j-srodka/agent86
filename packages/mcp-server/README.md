@@ -37,38 +37,44 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 
 ### Planning cycle and double materialization
 
-**`list_units`** and **`build_workspace_summary`** each call **`materializeSnapshot`** internally. They do **not** return a `WorkspaceSnapshot`, so any **`target_id`** you read from **`list_units`** is only valid for a **`WorkspaceSnapshot` whose `snapshot_id` matches** that same materialization pass.
+**`list_units`** and **`build_workspace_summary`** each call **`materializeSnapshot`** internally. They do **not** return a `WorkspaceSnapshot`, so **`target_id`** values from **`list_units`** belong to that tool’s internal materialization only.
 
-**Risk:** Calling **`list_units`**, then **`materialize_snapshot`** later (or editing disk in between), yields a **new** `snapshot_id`. If you **`apply_batch`** against the newer snapshot but use **unit ids from the older** `list_units` response, you can hit **`unknown_or_superseded_id`**, **`snapshot_content_mismatch`**, or silent planning drift relative to the spec’s same-cycle rule.
+**Stale unit ids:** If the workspace on disk changes after **`list_units`** (or you call **`materialize_snapshot`** again and get a fresh tree view), ids from the earlier pass may **no longer exist** in the snapshot you pass to **`apply_batch`**. The adapter rejects those ops with **`unknown_or_superseded_id`**; if file bytes no longer match the snapshot you attached, you can also see **`snapshot_content_mismatch`**. Treat that as: **re-materialize and use `target_id` values only from `snapshot.units` on the same `WorkspaceSnapshot` object you send to `apply_batch`.**
 
 **Recommended flow:**
 
-1. Call **`materialize_snapshot`** once per planning cycle and keep that JSON as the single source of truth for **`apply_batch`**.
-2. Derive “which unit to edit” from **`snapshot.units`** (filter/sort locally) when you already have the snapshot; use **`list_units`** only when you want ids without downloading the full snapshot payload, then immediately **`materialize_snapshot`** again and treat **only the second** snapshot as authoritative for **`apply_batch`**, **or** skip **`list_units`** and work from one materialize only.
-3. After any external change to the tree, **re-materialize** before building ops; never mix ids across different `snapshot_id` values.
+1. Call **`materialize_snapshot`** once per planning cycle and keep the returned **`WorkspaceSnapshot`** object in memory (parsed JSON).
+2. Choose **`target_id`** values only from **`snapshot.units`** on **that** object (filter/sort locally). Call **`apply_batch`** with **`snapshot` set to the **exact same object** from step 1 — **no second `materialize_snapshot`**, and no other tool call between materialize and apply that re-scans the tree for a new snapshot.
+3. If you used **`list_units`** first because the full snapshot is too large to hold, call **`materialize_snapshot` once** after discovery, take **`target_id`** only from **`snapshot.units`** on **that** response, then call **`apply_batch`** with **that same snapshot object** — still one snapshot into apply, not ids from **`list_units`** paired with a different materialization.
+4. After any external change to the tree, run a **new** **`materialize_snapshot`** and a new apply cycle; do not reuse old snapshot JSON or old ids.
 
-## Example: list units then rename
+## Example: materialize once, pass the same snapshot into `apply_batch`
 
-1. Call `list_units` with `{ "root_path": "/abs/path/to/repo" }` and read `LogicalUnit[]` (each entry has `id`, `file_path`, `kind`, …), **or** prefer `materialize_snapshot` once and inspect `units` there (see above).
-2. Call `materialize_snapshot` if you have not already, then call `apply_batch` with that **`WorkspaceSnapshot`** and ops whose **`target_id`** values come from **that same** snapshot (same `snapshot_id` as your read path).
+Use two tool calls and **one** snapshot payload: the JSON returned from **`materialize_snapshot`** is passed **verbatim** as the **`snapshot`** argument to **`apply_batch`**. Do not call **`materialize_snapshot`** again between those two calls unless the disk changed and you are deliberately starting a new cycle.
+
+1. **`materialize_snapshot`** — store the full JSON result (e.g. `snapshot` in your agent).
 
 ```json
 {
-  "name": "list_units",
+  "name": "materialize_snapshot",
   "arguments": { "root_path": "/path/to/repo" }
 }
 ```
+
+2. Pick **`target_id`** from **`snapshot.units`** (the **same** object from step 1).
+
+3. **`apply_batch`** — set **`snapshot`** to **that exact object** (the prior tool’s return value, unchanged — not a second fetch, not a fresh materialize).
 
 ```json
 {
   "name": "apply_batch",
   "arguments": {
     "root_path": "/path/to/repo",
-    "snapshot": { "...": "WorkspaceSnapshot from materialize_snapshot" },
+    "snapshot": "<the full WorkspaceSnapshot JSON returned by materialize_snapshot in step 1 — same object, unchanged>",
     "ops": [
       {
         "op": "rename_symbol",
-        "target_id": "<id from list_units>",
+        "target_id": "<id from snapshot.units on that same object>",
         "new_name": "renamedFn"
       }
     ]
