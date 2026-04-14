@@ -4,14 +4,16 @@ This package exposes the Agent86 reference TypeScript adapter (`ts-adapter`) ove
 
 ## Cursor
 
-Add a server entry to your MCP configuration (for example `~/.cursor/mcp.json` or project-local `.cursor/mcp.json`). Cursor typically nests servers under `mcpServers`; the **server definition** for this repo is:
+Add a server entry to your MCP configuration (for example `~/.cursor/mcp.json` or project-local `.cursor/mcp.json`). Example with the **`mcpServers`** wrapper Cursor expects:
 
 ```json
 {
-  "agent86": {
-    "command": "node",
-    "args": ["./packages/mcp-server/dist/index.js"],
-    "type": "stdio"
+  "mcpServers": {
+    "agent86": {
+      "command": "node",
+      "args": ["./packages/mcp-server/dist/index.js"],
+      "type": "stdio"
+    }
   }
 }
 ```
@@ -33,10 +35,22 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 
 `AdapterFingerprint` is `{ name, semver, grammar_digest, max_batch_ops }`. When `toolchain_fingerprint_at_apply` is omitted, the server audits using the snapshot header adapter.
 
+### Planning cycle and double materialization
+
+**`list_units`** and **`build_workspace_summary`** each call **`materializeSnapshot`** internally. They do **not** return a `WorkspaceSnapshot`, so any **`target_id`** you read from **`list_units`** is only valid for a **`WorkspaceSnapshot` whose `snapshot_id` matches** that same materialization pass.
+
+**Risk:** Calling **`list_units`**, then **`materialize_snapshot`** later (or editing disk in between), yields a **new** `snapshot_id`. If you **`apply_batch`** against the newer snapshot but use **unit ids from the older** `list_units` response, you can hit **`unknown_or_superseded_id`**, **`snapshot_content_mismatch`**, or silent planning drift relative to the spec’s same-cycle rule.
+
+**Recommended flow:**
+
+1. Call **`materialize_snapshot`** once per planning cycle and keep that JSON as the single source of truth for **`apply_batch`**.
+2. Derive “which unit to edit” from **`snapshot.units`** (filter/sort locally) when you already have the snapshot; use **`list_units`** only when you want ids without downloading the full snapshot payload, then immediately **`materialize_snapshot`** again and treat **only the second** snapshot as authoritative for **`apply_batch`**, **or** skip **`list_units`** and work from one materialize only.
+3. After any external change to the tree, **re-materialize** before building ops; never mix ids across different `snapshot_id` values.
+
 ## Example: list units then rename
 
-1. Call `list_units` with `{ "root_path": "/abs/path/to/repo" }` and read `LogicalUnit[]` (each entry has `id`, `file_path`, `kind`, …).
-2. Pick a function unit and call `apply_batch` with the **same** `WorkspaceSnapshot` you will use for the write (from a prior `materialize_snapshot` call, or materialize again and ensure `snapshot_id` matches your planning cycle).
+1. Call `list_units` with `{ "root_path": "/abs/path/to/repo" }` and read `LogicalUnit[]` (each entry has `id`, `file_path`, `kind`, …), **or** prefer `materialize_snapshot` once and inspect `units` there (see above).
+2. Call `materialize_snapshot` if you have not already, then call `apply_batch` with that **`WorkspaceSnapshot`** and ops whose **`target_id`** values come from **that same** snapshot (same `snapshot_id` as your read path).
 
 ```json
 {

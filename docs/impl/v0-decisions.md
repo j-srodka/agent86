@@ -630,6 +630,15 @@ All tools are registered on the MCP server; each delegates to the reference **`t
 
 3. **Unhandled exceptions** inside a tool handler: catch, return an MCP tool error with **`lang.agent86.internal_error`**, and put **`message`** and **`stack`** (when available) in **`evidence`** for operator debugging.
 
+### `lang.*` extensions (MCP server bridge)
+
+These codes are emitted by **`@agent86/mcp-server`** on the **MCP tool boundary** (tool result **`isError: true`**, JSON body in text content). They are **not** **`ValidationReport.entries[].code`** values; they signal argument/shape failures or unexpected handler errors before a normative adapter report is produced.
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| **`lang.agent86.invalid_tool_input`** | error (tool error) | Zod validation failed, **`WorkspaceSnapshot` / `ops` shape guard** failed, or otherwise malformed tool arguments at the MCP layer. **`evidence`** includes Zod **`issues`** or a **`field`** hint. |
+| **`lang.agent86.internal_error`** | error (tool error) | Uncaught exception in a tool handler. **`evidence.stack`** (when available) and **`message`** aid operators; not a spec section 12.1 adapter outcome. |
+
 ### Known limitations (this session)
 
 - **Python / mixed-language workspace via `py-adapter`:** **Not wired.** The MCP server uses **`ts-adapter` only** until workstream 2 lands; mixed-language snapshots or a future Python adapter are out of scope here.

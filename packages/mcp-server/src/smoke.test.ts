@@ -86,6 +86,23 @@ describe("mcp-server smoke", () => {
     });
   });
 
+  it("apply_batch malformed ops yields MCP tool error with lang.agent86.invalid_tool_input", async () => {
+    await withSmokeClient(async (client, root) => {
+      const snap = await materializeSnapshot({ rootPath: root });
+      const res = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: snap,
+          ops: [{ op: "not_a_real_op", target_id: "x", new_text: "y" }],
+        },
+      });
+      expect(res.isError).toBe(true);
+      const payload = firstTextJson(res) as { code: string };
+      expect(payload.code).toBe("lang.agent86.invalid_tool_input");
+    });
+  });
+
   it("apply_batch invalid target_id yields failure with normative code", async () => {
     await withSmokeClient(async (client, root) => {
       const snap = await materializeSnapshot({ rootPath: root });
