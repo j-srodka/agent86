@@ -1,6 +1,8 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+import { McpError } from "./router.js";
+
 export function jsonToolSuccess(payload: unknown): CallToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(payload) }],
@@ -39,6 +41,13 @@ export async function runToolHandler(fn: () => Promise<CallToolResult>): Promise
   try {
     return await fn();
   } catch (e) {
+    if (e instanceof McpError) {
+      return jsonToolError({
+        code: e.code,
+        message: e.message,
+        evidence: e.evidence ?? undefined,
+      });
+    }
     return internalToolError(e);
   }
 }

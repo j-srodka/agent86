@@ -1,6 +1,6 @@
 # @agent86/mcp-server
 
-This package exposes the Agent86 reference TypeScript adapter (`ts-adapter`) over the **Model Context Protocol (MCP)** using **stdio** only: materialize snapshots, list addressable logical units, read workspace summaries, and apply validated op batches with structured `ValidationReport` outcomes. Hosts such as Cursor or Claude Code can spawn `agent86-mcp` as a subprocess and call tools without custom glue code.
+This package exposes the Agent86 reference adapters over the **Model Context Protocol (MCP)** using **stdio** only: materialize snapshots, list addressable logical units, read workspace summaries, and apply validated op batches with structured `ValidationReport` outcomes. **`ts-adapter`** handles **`.ts`** sources and **`@agent86/py-adapter`** handles **`.py`** sources (see **Mixed-language workspaces** below). Hosts such as Cursor or Claude Code can spawn `agent86-mcp` as a subprocess and call tools without custom glue code.
 
 ## Cursor
 
@@ -18,7 +18,15 @@ Add a server entry to your MCP configuration (for example `~/.cursor/mcp.json` o
 }
 ```
 
-Use the path to **built** `dist/index.js` from your clone; adjust `args` to an absolute path if the config file is not at the repository root. Run `pnpm build:mcp` (or `pnpm --filter @agent86/mcp-server build`) before starting the editor.
+Use the path to **built** `dist/index.js` from your clone; adjust `args` to an absolute path if the config file is not at the repository root. Run `pnpm build:mcp` (or `pnpm --filter @agent86/py-adapter build && pnpm --filter @agent86/mcp-server build`) before starting the editor.
+
+## Mixed-language workspaces
+
+- **Supported tracked sources:** **`.ts`** (TypeScript grammar via `ts-adapter`) and **`.py`** (Python grammar via `@agent86/py-adapter`).
+- **Routing:** By **file extension only** (no content sniffing): each tool resolves ops and units using the unit’s **`file_path`** suffix.
+- **Combined snapshot:** `materialize_snapshot` merges TypeScript and Python materializations into one **`WorkspaceSnapshot`** (ts units first, then py units) and adds **`grammar_digests: { ts, py }`** alongside the legacy **`grammar_digest`** string. See `docs/impl/v0-decisions.md` (**MCP mixed-language routing (v2)**) for the combined **`snapshot_id`** formula and wire details.
+- **Cross-adapter atomicity:** A single **`apply_batch`** call may run the TypeScript batch and then the Python batch. **There is no cross-language rollback:** if the Python step fails after the TypeScript step succeeded, **TypeScript file changes from that call are already on disk**. Treat multi-language batches accordingly (smaller batches, or separate calls per language, if you need a simpler failure surface).
+- **`.tsx` files:** Still **not** parsed as TypeScript; paths are recorded in **`skipped_tsx_paths`** on the snapshot (same as `ts-adapter` alone).
 
 ## Claude Code
 
@@ -28,9 +36,9 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 
 | Tool | Input | Output |
 | ---- | ----- | ------ |
-| `materialize_snapshot` | `{ root_path: string, inline_threshold_bytes?: number }` | `WorkspaceSnapshot` |
+| `materialize_snapshot` | `{ root_path: string, inline_threshold_bytes?: number }` | `WorkspaceSnapshot` (combined `.ts` + `.py`; includes `grammar_digests`) |
 | `list_units` | `{ root_path: string, file_path?: string }` | `LogicalUnit[]` |
-| `build_workspace_summary` | `{ root_path: string }` | `WorkspaceSummary` |
+| `build_workspace_summary` | `{ root_path: string }` | `WorkspaceSummary` (adds `grammar_digests`; `manifest_url` from ts read path) |
 | `apply_batch` | `{ root_path: string, snapshot: WorkspaceSnapshot, ops: V0Op[], toolchain_fingerprint_at_apply?: AdapterFingerprint }` | `ValidationReport` |
 
 `AdapterFingerprint` is `{ name, semver, grammar_digest, max_batch_ops }`. When `toolchain_fingerprint_at_apply` is omitted, the server audits using the snapshot header adapter.
@@ -87,4 +95,4 @@ Inspect the returned `ValidationReport`: on success `outcome === "success"` and 
 ## Errors
 
 - **Adapter-level rejections** (`grammar_mismatch`, `unknown_or_superseded_id`, `batch_size_exceeded`, …) are returned **inside** a successful tool payload as a `ValidationReport` JSON object.
-- **Bad tool arguments** or unexpected server failures use MCP tool error results with codes such as `lang.agent86.invalid_tool_input` or `lang.agent86.internal_error` and structured `evidence`.
+- **Bad tool arguments** or unexpected server failures use MCP tool error results with codes such as `lang.agent86.invalid_tool_input`, `lang.agent86.unsupported_file_extension` (non-`.ts` / non-`.py` routed paths), or `lang.agent86.internal_error` and structured `evidence`.
