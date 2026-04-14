@@ -18,7 +18,7 @@ We ran an A/B benchmark across three OSS repositories — Zod (TypeScript), Pret
 
 One caveat up front: the Ruff tasks targeted Python source files processed by a regex-based unit detector, not a full tree-sitter grammar. This is a deliberate stub — enough to demonstrate the op vocabulary is language-agnostic, not a claim about production Python support.
 
-The canonical artifact is commit `e8583c92` (`packages/ab-harness/ab-metrics-expanded.json`). We verified determinism by running the benchmark three consecutive times with the same seed; all three runs produced byte-identical output.
+The canonical artifact is commit `1346ae1` (`packages/ab-harness/ab-metrics-expanded.json`). We verified determinism by running the benchmark three consecutive times with the same seed; all three runs produced byte-identical output.
 
 ## 4. Results
 
