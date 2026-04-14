@@ -141,6 +141,9 @@ vite.config.ts.timestamp-*
 # Mac OS
 .DS_Store
 
+# Claude Code local worktrees (nested checkouts for other efforts; not tracked here)
+.claude/worktrees/
+
 # Agent86 v0: cloned OSS / vendor artifacts
 vendor/
 .cache/repos/
