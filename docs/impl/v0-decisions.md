@@ -641,7 +641,8 @@ These codes are emitted by **`@agent86/mcp-server`** on the **MCP tool boundary*
 
 ### Known limitations (this session)
 
-- **Python / mixed-language workspace via `py-adapter`:** **Not wired in MCP.** The MCP server uses **`ts-adapter` only** at the tool boundary until a follow-up workstream wires `py-adapter` for mixed-language roots. The **`py-adapter`** package ships for benchmarks and library consumers.
+- **Python / mixed-language workspace via `py-adapter`:** **Not wired in MCP.** The MCP server uses **`ts-adapter` only** at the tool boundary until a follow-up workstream wires `py-adapter` for mixed-language roots. The **`py-adapter`** package ships for benchmarks and library consumers.  
+  *(Superseded for routing behavior by **MCP mixed-language routing (v2)** below — `py-adapter` is wired in MCP as of commit `d032e6e`.)*
 
 - **No authentication, no rate limiting** — local stdio trust model only.
 
@@ -762,7 +763,7 @@ A single invocation still returns **one** JSON object shaped like **`WorkspaceSn
    `{ "ts": "<GRAMMAR_DIGEST_V0 hex>", "py": "<PY_GRAMMAR_DIGEST hex>" }`  
    Values are the same pinned constants as each adapter’s header digest. This does **not** change per-adapter snapshot headers when materializing **`.ts`** or **`.py`** alone.
 
-2. **Backward compatibility — `grammar_digest` (string):** When the workspace contains at least one tracked **`.ts`** file in the combined **`files[]`**, **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`** (same as historical ts-only MCP snapshots). When there are **no** **`.ts`** files but there is at least one **`.py`** file, **`grammar_digest`** is **`PY_GRAMMAR_DIGEST`**. When neither language is present (empty tracked set), **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`**. Callers that only read the legacy string should prefer **`grammar_digests`** for mixed or Python-primary roots.
+2. **Backward compatibility — `grammar_digest` (string):** When the workspace contains at least one tracked **`.ts`** file in the combined **`files[]`**, **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`** (same as historical ts-only MCP snapshots). When there are **no** **`.ts`** files but there is at least one **`.py`** file, **`grammar_digest`** is **`PY_GRAMMAR_DIGEST`**. When neither language is present (empty tracked set), **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`**. Callers that only read the legacy string should prefer **`grammar_digests`** for mixed or Python-primary roots. **Field precedence when both are present:** **`grammar_digests`** is authoritative for per-language pins on the MCP combined wire. **`grammar_digest`** duplicates **`grammar_digests.ts`** whenever **`files[]`** includes a **`.ts`** path; if there are no **`.ts`** files but at least one **`.py`**, it duplicates **`grammar_digests.py`**; if **`files[]`** is empty, it duplicates **`grammar_digests.ts`** (nominal default). New integrations should branch on **`grammar_digests`** when present.
 
 3. **`units[]` ordering:** All units from the **ts-adapter** materialization appear **first** (in the adapter’s existing deterministic order), followed by all units from the **py-adapter** materialization (adapter order). **`files[]`** is the **sorted union** of both adapters’ **`files[]`** by **`path`** (ascending).
 
@@ -796,7 +797,7 @@ There is **no** cross-adapter rollback. If the ts batch succeeds and the py batc
 
 ### Tier I `target_id` collision guarantee
 
-Unit ids are SHA-256 hex over a canonical string that includes the **grammar digest** (ts vs py constants differ), **`snapshot_root`**, **`file_path`**, byte range, and **kind**. Ts and py digests are **different hex strings**, so the hashed payload differs for any identical path/coordinates across languages. **No extra prefix** is required; **`.ts`** and **`.py`** unit ids cannot collide assuming one workspace root.
+Unit ids are SHA-256 hex over a canonical string that includes the **grammar digest** (ts vs py constants differ), **`snapshot_root`**, **`file_path`**, byte range, and **kind**. **Implementation cross-check:** **`py-adapter`** `computeUnitId` hashes a pipe-delimited preimage that includes **`filePathPosix`** (`packages/py-adapter/src/units.ts`), matching the **`ts-adapter`** preimage shape — so **repo-relative path** is always in the id input alongside distinct **`grammarDigest`** values. Ts and py grammar digest constants are **different hex strings**, so the hashed payload differs for any identical path/coordinates across languages. **No extra prefix** is required; **`.ts`** and **`.py`** unit ids cannot collide assuming one workspace root.
 
 ### `lang.*` extension (MCP tool boundary)
 
