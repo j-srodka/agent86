@@ -18,7 +18,7 @@
   formatter pinning, cross-file rename_symbol, manifest strict
   mode, expanded multi-repo benchmark (Zod, Prettier, Ruff),
   deterministic seeded task sampling, Wilson CI metrics
-- Canonical benchmark artifact: commit e8583c92
+- Canonical benchmark artifact: commit 1346ae1
   - IR false positives: 0 / ~60 tasks
   - Baseline false positives: 27 total
 - Writeup: docs/writeup/false-positive-problem.md

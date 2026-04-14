@@ -14,9 +14,9 @@ agent86 is a portable op vocabulary and validation layer for agent-to-code editi
 
 ## 3. How we measured
 
-We ran an A/B benchmark across three OSS repositories — Zod (TypeScript), Prettier (TypeScript), and Ruff (Python stub) — using seed-42 deterministic task sampling. Each repo received 20 tasks split between `replace_unit` and `rename_symbol` categories. The baseline condition used naive string operations (full-file reads, global string replace). The agent86 condition used IR-backed ops against materialized snapshots.
+We ran an A/B benchmark across three OSS repositories — Zod (TypeScript), Prettier (TypeScript), and Ruff (Python) — using seed-42 deterministic task sampling. Each repo received 20 tasks split between `replace_unit` and `rename_symbol` categories. The baseline condition used naive string operations (full-file reads, global string replace). The agent86 condition used IR-backed ops against materialized snapshots.
 
-One caveat up front: the Ruff tasks targeted Python source files processed by a regex-based unit detector, not a full tree-sitter grammar. This is a deliberate stub — enough to demonstrate the op vocabulary is language-agnostic, not a claim about production Python support.
+One caveat up front: earlier benchmark runs processed Ruff’s Python targets with a regex-based unit detector — a deliberate stub to show the op vocabulary is language-agnostic. As of commit `1346ae1` (the v2.0.0 benchmark refresh), Ruff tasks use the tree-sitter-python adapter in `packages/py-adapter/` instead. That is closer to production-shaped parsing; it is still not a blanket claim about exhaustive Python coverage.
 
 The canonical artifact is commit `1346ae1` (`packages/ab-harness/ab-metrics-expanded.json`). We verified determinism by running the benchmark three consecutive times with the same seed; all three runs produced byte-identical output.
 
