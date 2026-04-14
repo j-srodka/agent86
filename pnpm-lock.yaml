@@ -17,6 +17,9 @@ importers:
 
   packages/ab-harness:
     dependencies:
+      '@agent86/py-adapter':
+        specifier: workspace:*
+        version: link:../py-adapter
       ts-adapter:
         specifier: workspace:*
         version: link:../ts-adapter

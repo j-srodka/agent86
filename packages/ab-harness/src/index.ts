@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import { PYTHON_STUB_GRAMMAR_DIGEST, V0_ADAPTER_FINGERPRINT } from "ts-adapter";
+import { PY_GRAMMAR_DIGEST } from "@agent86/py-adapter";
 
 import { ensureClonedCommit } from "./clone.js";
 import {
@@ -92,7 +93,7 @@ export async function main(): Promise<void> {
       repos: [
         { id: "zod", cloneRoot: zodRoot, url: zodUrl, rev: zodRev, language: "typescript" },
         { id: "prettier", cloneRoot: prettierRoot, url: prettierUrl, rev: prettierRev, language: "typescript" },
-        { id: "ruff", cloneRoot: ruffRoot, url: ruffUrl, rev: ruffRev, language: "python_stub" },
+        { id: "ruff", cloneRoot: ruffRoot, url: ruffUrl, rev: ruffRev, language: "python" },
       ],
     });
 
@@ -101,6 +102,7 @@ export async function main(): Promise<void> {
       adapter_fingerprint: { ...V0_ADAPTER_FINGERPRINT },
       grammar_digest: V0_ADAPTER_FINGERPRINT.grammar_digest,
       python_stub_grammar_digest: PYTHON_STUB_GRAMMAR_DIGEST,
+      py_grammar_digest: PY_GRAMMAR_DIGEST,
       seed: BENCHMARK_SEED,
       repos,
       human_summary,
