@@ -586,3 +586,54 @@ The locked spec §12.1 lists `format_drift` as **E** in the portable table; **th
 - **`packages/ab-harness/ab-metrics-expanded.json`** — schema `ab-harness.expanded.v2`; per-repo **`skipped_files`**, **`baseline`** and **`ir`** blocks with per-task rows, aggregate rates, Wilson bounds, **`false_positive_count` sums**, and **`human_summary`** (false-positive-led) for relay to Claude.
 
 
+---
+
+## MCP server (v2)
+
+**Date (normative for this repo):** 2026-04-13
+
+### Transport
+
+**Choice:** **stdio only** (MCP over process stdin/stdout). **No HTTP, no SSE** in this workstream.
+
+**Rationale:** Matches how Cursor, Claude Code, and other hosts already spawn MCP servers as subprocesses; smallest integration surface; no listener ports or auth story required for a first ship.
+
+**Alternatives not used:** Streamable HTTP / SSE transports are deferred until a concrete multi-tenant or remote-host requirement exists.
+
+### Package and binary
+
+| Item | Value |
+| ---- | ----- |
+| **pnpm package** | `@agent86/mcp-server` at `packages/mcp-server/` |
+| **CLI bin** | `agent86-mcp` → `dist/index.js` (Node entry; stdio transport) |
+
+**Dependencies (normative):** `@modelcontextprotocol/sdk`, workspace `ts-adapter`, **`zod`** for tool argument validation at the MCP boundary.
+
+### Tool surface (four tools)
+
+All tools are registered on the MCP server; each delegates to the reference **`ts-adapter`** APIs. JSON shapes use **snake_case** field names at the MCP tool boundary for consistency with wire types in `WorkspaceSnapshot` / `ValidationReport`.
+
+| Tool | Input (summary) | Output | Adapter calls |
+| ---- | ----------------- | ------ | ------------- |
+| **`materialize_snapshot`** | `root_path`, optional `inline_threshold_bytes` | Full **`WorkspaceSnapshot`** JSON | `materializeSnapshot({ rootPath, inlineThresholdBytes, … })` |
+| **`list_units`** | `root_path`, optional `file_path` (repo-relative POSIX filter) | **`LogicalUnit[]`** | `materializeSnapshot` then filter `snapshot.units` by `file_path` when set; **sort** by `file_path` then `start_byte` |
+| **`build_workspace_summary`** | `root_path` | **`WorkspaceSummary`** | `materializeSnapshot` then `buildWorkspaceSummary` |
+| **`apply_batch`** | `root_path`, `snapshot`, `ops`, optional `toolchain_fingerprint_at_apply` (**`AdapterFingerprint`** object) | **`ValidationReport`** | `applyBatch({ snapshotRootPath, snapshot, ops, toolchainFingerprintAtApply, … })` — fingerprint serialized to a stable JSON string when provided; when omitted, the server uses the snapshot header’s adapter fingerprint JSON |
+
+**Why `list_units` exists:** `materialize_snapshot` returns the full snapshot (large). Agents that only need Tier I addresses for op construction should not be forced to download and parse the entire snapshot first. **`list_units`** is a thin read helper: one root path, optional file filter, deterministic unit ordering — enough to discover **`target_id`** values before calling **`apply_batch`** with a snapshot the agent already holds (from a prior materialize or from its own cache).
+
+### Error handling policy
+
+1. **Normative adapter outcomes (`ValidationReport`):** Conditions that the reference adapter already expresses as **`ValidationReport`** with spec **section 12.1** codes (and `lang.*` per 12.2) — e.g. **`grammar_mismatch`**, **`batch_size_exceeded`**, **`unknown_or_superseded_id`**, **`snapshot_content_mismatch`**, apply-time gates — MUST be returned as **normal tool success** payloads containing the **`ValidationReport`** JSON ( **`outcome`**, **`entries[].code`**, etc.). Hosts MUST NOT treat these as MCP transport-level failures when the tool ran successfully.
+
+2. **MCP tool error (`isError` / tool error result):** Used for **non-adapter-contract** failures: invalid tool arguments (Zod), I/O or unexpected throws, missing directories when the tool requires a readable root, etc. Where there is **no applicable §12.1 code**, responses use a stable **integration subcode** such as **`lang.agent86.invalid_tool_input`** or **`lang.agent86.internal_error`** with structured **`evidence`** (never prose-only branching for programmatic handling).
+
+3. **Unhandled exceptions** inside a tool handler: catch, return an MCP tool error with **`lang.agent86.internal_error`**, and put **`message`** and **`stack`** (when available) in **`evidence`** for operator debugging.
+
+### Known limitations (this session)
+
+- **Python / mixed-language workspace via `py-adapter`:** **Not wired.** The MCP server uses **`ts-adapter` only** until workstream 2 lands; mixed-language snapshots or a future Python adapter are out of scope here.
+
+- **No authentication, no rate limiting** — local stdio trust model only.
+
+
