@@ -77,6 +77,8 @@ For **`applyBatch`**, the reference adapter enforces (in order): on-disk **gramm
 - **Spec changes:** propose via **`docs/impl/spec-proposals.md`**; humans apply edits to the locked spec file.
 - **v1 roadmap:** cross-file ops, richer manifest validation, TSX grammar scope, and other items called out in the plan’s “Out of scope” section and in **`docs/impl/v0-decisions.md`** (e.g. strict manifest JSON in v1).
 
+**Python and MCP:** The **`packages/py-adapter/`** package targets Python workspaces with the same adapter surface as **`ts-adapter`** (materialize, apply, summaries), so you can treat it as a drop-in for **`.py`** files the way **`ts-adapter`** covers TypeScript. **`packages/mcp-server/`** exposes the reference stack over stdio MCP with four tools—**`materialize_snapshot`**, **`list_units`**, **`build_workspace_summary`**, and **`apply_batch`**—see **`packages/mcp-server/README.md`** for the Cursor (and Claude Code) **`mcpServers`** config block. Automatic mixed-language routing (for example **`.ts`** → **`ts-adapter`**, **`.py`** → **`py-adapter`**) from a single entry point is planned for the next release.
+
 External review: **`AGENTS.md`** describes relaying stress-test passes through **Claude (claude.ai)** when you want a second pair of eyes on reports and diffs.
 
 ## Relationship to LSP and MCP
