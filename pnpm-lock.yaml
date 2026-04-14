@@ -17,6 +17,9 @@ importers:
 
   packages/ab-harness:
     dependencies:
+      '@agent86/py-adapter':
+        specifier: workspace:*
+        version: link:../py-adapter
       ts-adapter:
         specifier: workspace:*
         version: link:../ts-adapter
@@ -49,6 +52,22 @@ importers:
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.4(@types/node@22.19.17)
+
+  packages/py-adapter:
+    dependencies:
+      tree-sitter:
+        specifier: 0.21.1
+        version: 0.21.1
+      tree-sitter-python:
+        specifier: 0.21.0
+        version: 0.21.0(tree-sitter@0.21.1)
     devDependencies:
       typescript:
         specifier: ^5.7.3
@@ -701,6 +720,9 @@ packages:
     resolution: {integrity: sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==}
     engines: {node: '>= 0.6'}
 
+  node-addon-api@7.1.1:
+    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
   node-addon-api@8.7.0:
     resolution: {integrity: sha512-9MdFxmkKaOYVTV+XVRG8ArDwwQ77XIgIPyKASB1k3JPq3M8fGQQQE3YpMOrKm6g//Ktx8ivZr8xo1Qmtqub+GA==}
     engines: {node: ^18 || ^20 || >= 21}
@@ -876,6 +898,15 @@ packages:
       tree-sitter: ^0.21.1
     peerDependenciesMeta:
       tree-sitter:
+        optional: true
+
+  tree-sitter-python@0.21.0:
+    resolution: {integrity: sha512-IUKx7JcTVbByUx1iHGFS/QsIjx7pqwTMHL9bl/NGyhyyydbfNrpruo2C7W6V4KZrbkkCOlX8QVrCoGOFW5qecg==}
+    peerDependencies:
+      tree-sitter: ^0.21.0
+      tree_sitter: '*'
+    peerDependenciesMeta:
+      tree_sitter:
         optional: true
 
   tree-sitter-typescript@0.23.2:
@@ -1537,6 +1568,8 @@ snapshots:
 
   negotiator@1.0.0: {}
 
+  node-addon-api@7.1.1: {}
+
   node-addon-api@8.7.0: {}
 
   node-gyp-build@4.8.4: {}
@@ -1735,6 +1768,12 @@ snapshots:
       node-addon-api: 8.7.0
       node-gyp-build: 4.8.4
     optionalDependencies:
+      tree-sitter: 0.21.1
+
+  tree-sitter-python@0.21.0(tree-sitter@0.21.1):
+    dependencies:
+      node-addon-api: 7.1.1
+      node-gyp-build: 4.8.4
       tree-sitter: 0.21.1
 
   tree-sitter-typescript@0.23.2(tree-sitter@0.21.1):

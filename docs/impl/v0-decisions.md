@@ -641,8 +641,96 @@ These codes are emitted by **`@agent86/mcp-server`** on the **MCP tool boundary*
 
 ### Known limitations (this session)
 
-- **Python / mixed-language workspace via `py-adapter`:** **Not wired.** The MCP server uses **`ts-adapter` only** until workstream 2 lands; mixed-language snapshots or a future Python adapter are out of scope here.
+- **Python / mixed-language workspace via `py-adapter`:** **Not wired in MCP.** The MCP server uses **`ts-adapter` only** at the tool boundary until a follow-up workstream wires `py-adapter` for mixed-language roots. The **`py-adapter`** package ships for benchmarks and library consumers.
 
 - **No authentication, no rate limiting** — local stdio trust model only.
 
 
+## Python adapter (v2)
+
+**Date (normative for this repo):** 2026-04-13
+
+Workstream 2 of the v2 cycle: a real Python tree-sitter adapter (`packages/py-adapter/`) that replaces the regex stub used in the expanded benchmark for Ruff tasks. The adapter is a **drop-in compatible** replacement for `ts-adapter`'s public surface — same exported interface, same normative `ValidationReport` codes, same §9 gate sequence.
+
+### Package identity
+
+- **Package name:** `@agent86/py-adapter`
+- **Location:** `packages/py-adapter/` (pnpm workspace member)
+- **Dependencies:** `tree-sitter@0.21.1` (peer-pinned via workspace; same native binding version as `ts-adapter`), `tree-sitter-python@0.21.0`
+
+**Binding choice:** The adapter uses the native Node.js `tree-sitter@0.21.1` bindings (the same module already installed for `ts-adapter`) rather than `web-tree-sitter`. Rationale: native bindings are already pinned and tested in this workspace; `web-tree-sitter` adds async WASM initialization complexity with no benefit in a server-side Node.js context. The grammar digest discipline (SHA-256 of the artifact) is identical regardless.
+
+### Grammar digest (py-adapter, normative)
+
+**Artifact:** SHA-256 (lowercase hex) of the file `src/parser.c` as installed from the pnpm-lockfile-pinned npm package `tree-sitter-python@0.21.0`. Same discipline as `ts-adapter`'s `GRAMMAR_DIGEST_V0`.
+
+**Pinned npm version:** `tree-sitter-python@0.21.0`
+
+**Checked-in constant:** `PY_GRAMMAR_DIGEST` in `packages/py-adapter/src/grammar.ts`
+
+**Computed digest:** `00461a24da2781da9be50b547f1710f9d22c3da102c60f250d8668fd46166191` — confirmed by running `computePyGrammarDigestFromArtifact()` against the installed `src/parser.c` at `tree-sitter-python@0.21.0_tree-sitter@0.21.1`.
+
+**Gate discipline:** Same as ts-adapter:
+1. `assertPyGrammarDigestPinned()` — on-disk `src/parser.c` from installed `tree-sitter-python` must match `PY_GRAMMAR_DIGEST` before any apply.
+2. `snapshot.grammar_digest === PY_GRAMMAR_DIGEST` — snapshot header must match; else `grammar_mismatch`.
+
+**Bump triggers (normative for py-adapter):** Same as ts-adapter triggers documented above (lockfile version change; artifact path change; intentional grammar bump; local path overrides).
+
+### LogicalUnit kinds for Python (v1)
+
+| Kind | Tree-sitter node | Scope |
+| ---- | ---------------- | ----- |
+| `function_definition` | `function_definition` | Top-level **and** direct child of a class `block` (methods, including `async def`) |
+| `class_definition` | `class_definition` | Top-level only |
+
+**Note on `async def`:** In `tree-sitter-python@0.21.0`, `async def foo():` parses as a `function_definition` node with an `async` keyword child — there is **no** separate `async_function_definition` node type in this grammar version. Both `def` and `async def` are `function_definition` and are collected identically.
+
+**Rationale:** These two kinds cover the primary patch targets in real Python repos. Methods (function/async inside a class body) are direct children of the class `block` node — not nested arbitrarily — so depth-limited detection is unambiguous. Inner functions (closures, nested defs inside methods) are **not** Tier I units in v1; they fall below the top-level or class-method boundary. This is consistent with ts-adapter's choice of `function_declaration` and `method_definition` as the unit boundary.
+
+**Unit id formula:** Same as ts-adapter — SHA-256 of `|`-joined string: `grammarDigest | snapshotRootResolved | filePathPosix | startByte | endByte | kind`.
+
+**Wire kind strings:** `function_definition`, `class_definition` — these are the values in `LogicalUnit.kind` and `ExtractedUnitSpan.kind` for the py-adapter. The py-adapter defines its own types module; no shared kind union with ts-adapter.
+
+### rename_symbol scope (py-adapter, v1)
+
+- **Same-file scope:** Walk file AST; rename `identifier` nodes matching the old name within the declaration's scope.
+- **Homonym prevention:** Occurrences inside `string` (single/double quoted), `comment`, and f-string content nodes are **skipped** with a stable reason code. Same false-positive prevention discipline as ts-adapter.
+- **`cross_file: true`:** Scan all other tracked `.py` files; skip string and comment contexts; emit `lang.py.cross_file_rename_broad_match` warning when `found > 10`.
+- **`id_resolve_delta`:** Empty on successful rename (unit ids are name-independent).
+- **Emit `rename_surface_report`** on every successful rename.
+- **Emit `rename_surface_skipped_refs`** warning when `skipped.length > 0`.
+
+### move_unit scope (py-adapter, v1)
+
+- **Cross-file only.** Same-file reorder is rejected with `lang.py.move_unit_same_file`.
+- **Import rewriting:** Out of scope. Same as ts-adapter v1 — callers must update imports after a move.
+- **Name conflict:** Destination file already contains a unit with the same declared name → reject with `lang.py.move_unit_name_conflict`.
+- **Atomicity:** Same process-lifetime backup/restore model as ts-adapter.
+
+### `lang.*` extensions (py-adapter)
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| `lang.py.rename_unsupported_node_kind` | error | Target unit's kind is not `function_definition` or `class_definition`. |
+| `lang.py.cross_file_rename_broad_match` | warning | cross_file rename matched many name occurrences in Python source (default threshold: 10); review all touched files before commit — many may be false positives. |
+| `lang.py.move_unit_name_conflict` | error | Destination file already has a unit with the same declared name. |
+| `lang.py.move_unit_same_file` | error | destination_file equals the source file (same-file reorder out of scope). |
+
+### §9 apply-time gates (py-adapter)
+
+Same sequence as ts-adapter:
+1. `assertPyGrammarDigestPinned()` — on-disk `src/parser.c` matches `PY_GRAMMAR_DIGEST`
+2. `snapshot.grammar_digest === PY_GRAMMAR_DIGEST`
+3. `snapshot.adapter` matches `PY_ADAPTER_FINGERPRINT`
+4. `ops.length <= max_batch_ops` (50)
+5. On-disk SHA-256 of canonical LF bytes matches `WorkspaceSnapshot.files[].sha256` for all tracked `.py` files
+
+### Benchmark integration
+
+After py-adapter is green (all 8+ conformance tests pass):
+- Update `packages/ab-harness/src/run-expanded.ts` to use `py-adapter`'s `materializeSnapshot` and `applyBatch` for Ruff tasks; remove Python stub import for Ruff.
+- Re-run `pnpm ab:bench:expanded` three consecutive times with the same seed (42).
+- Confirm IR false positives still 0 across all three runs.
+- Task counts for Ruff may change (real grammar detects more method-level units than top-level-only stub) — expected and honest; document the change in the commit message.
+- If IR false positives > 0: stop and report to human before committing. Do not commit a degraded artifact.
+- Updated canonical artifact: `packages/ab-harness/ab-metrics-expanded.json` with `language: "python"` for Ruff tasks (replacing `python_stub`).

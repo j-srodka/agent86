@@ -28,7 +28,7 @@ export type TaskCategory = "replace_unit" | "rename_symbol";
 export interface TaskDescriptor {
   task_id: string;
   repo: string;
-  language: "typescript" | "python_stub";
+  language: "typescript" | "python_stub" | "python";
   task_category: TaskCategory;
   target_unit_id: string;
   file_path: string;
@@ -172,12 +172,14 @@ function pickRenameUnitTs(
   return { unit, has_homonym: name ? homonymInStringsOrComments(src, name) : false };
 }
 
+type PyAdapterUnit = { id: string; file_path: string; kind: string; start_byte: number; end_byte: number };
+
 function pickRenameUnitPy(
-  pool: import("ts-adapter").LogicalUnit[],
+  pool: PyAdapterUnit[],
   fileSources: Map<string, string>,
   rand: () => number,
   avoidIds: Set<string>,
-): { unit: import("ts-adapter").LogicalUnit; has_homonym: boolean } {
+): { unit: PyAdapterUnit; has_homonym: boolean } {
   const available = pool.filter((u) => !avoidIds.has(u.id));
   for (let attempt = 0; attempt < 3; attempt++) {
     const copy = [...available];
@@ -208,7 +210,7 @@ function pickRenameUnitPy(
 
 export interface SampleTasksOptions {
   repo: string;
-  language: "typescript" | "python_stub";
+  language: "typescript" | "python_stub" | "python";
   taskCount?: number;
   seed?: number;
 }
@@ -309,6 +311,71 @@ export function sampleTasksFromPythonSnapshot(
         task_id,
         repo: options.repo,
         language: "python_stub",
+        task_category: "rename_symbol",
+        target_unit_id: r.unit.id,
+        file_path: r.unit.file_path,
+        rename_to,
+        has_homonym: r.has_homonym,
+      });
+    }
+  }
+  return tasks;
+}
+
+interface PyAdapterSnapshot {
+  units: Array<{ id: string; file_path: string; kind: string; start_byte: number; end_byte: number }>;
+}
+
+/**
+ * Sample tasks from a py-adapter snapshot (real tree-sitter units).
+ * Unit kinds: `function_definition`, `class_definition`.
+ */
+export function sampleTasksFromPyAdapterSnapshot(
+  snapshot: PyAdapterSnapshot,
+  fileSources: Map<string, string>,
+  options: SampleTasksOptions,
+): TaskDescriptor[] {
+  const seed = options.seed ?? BENCHMARK_SEED;
+  const taskCount = options.taskCount ?? 20;
+  const rand = mulberry32(seed ^ 0xdeadbeef);
+  const eligible = snapshot.units.filter(
+    (u) => u.kind === "function_definition" || u.kind === "class_definition",
+  );
+  const shuffled = [...eligible];
+  shuffleInPlace(shuffled, rand);
+  const n = Math.min(taskCount, shuffled.length);
+  const picked = shuffled.slice(0, n);
+  const replaceN = Math.min(12, Math.ceil((n * 12) / 20));
+  const tasks: TaskDescriptor[] = [];
+  const usedRenameIds = new Set<string>();
+
+  for (let idx = 0; idx < n; idx++) {
+    const unit = picked[idx]!;
+    const isReplace = idx < replaceN;
+    const task_id = `${options.repo}_${isReplace ? "rep" : "ren"}_${String(idx).padStart(2, "0")}`;
+    if (isReplace) {
+      tasks.push({
+        task_id,
+        repo: options.repo,
+        language: "python",
+        task_category: "replace_unit",
+        target_unit_id: unit.id,
+        file_path: unit.file_path,
+        has_homonym: false,
+      });
+    } else {
+      const r = pickRenameUnitPy(
+        eligible,
+        fileSources,
+        mulberry32(seed + idx * 0x85ebca6b + 7),
+        usedRenameIds,
+      );
+      usedRenameIds.add(r.unit.id);
+      const rename_to = `renamed_${task_id.replace(/[^a-z0-9]+/gi, "_")}`;
+      tasks.push({
+        task_id,
+        repo: options.repo,
+        language: "python",
         task_category: "rename_symbol",
         target_unit_id: r.unit.id,
         file_path: r.unit.file_path,

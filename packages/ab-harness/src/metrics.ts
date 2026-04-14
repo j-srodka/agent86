@@ -103,7 +103,7 @@ export type ExpandedTaskRow = ApproachMetrics & {
   task_id: string;
   task_category: "replace_unit" | "rename_symbol";
   repo: string;
-  language: "typescript" | "python_stub";
+  language: "typescript" | "python_stub" | "python";
   false_positive_count: number;
 };
 
@@ -118,7 +118,7 @@ export interface RepoExpandedBlock {
 /** Repo-level audit list for expanded metrics (TypeScript repos: parse-throw omissions from `materializeSnapshot`). */
 export type ExpandedRepoSkippedFile = { file_path: string; reason: "parse_throw" };
 
-export const METRICS_EXPANDED_SCHEMA_VERSION = "ab-harness.expanded.v2";
+export const METRICS_EXPANDED_SCHEMA_VERSION = "ab-harness.expanded.v3";
 
 export interface ExpandedMetricsFile {
   schema_version: typeof METRICS_EXPANDED_SCHEMA_VERSION;
@@ -126,6 +126,8 @@ export interface ExpandedMetricsFile {
   grammar_digest: string;
   /** Regex Python stub pin (see `packages/ts-adapter/src/grammars/python-stub.ts`). */
   python_stub_grammar_digest: string;
+  /** SHA-256 of tree-sitter-python@0.21.0 parser.c (py-adapter v1). */
+  py_grammar_digest: string;
   seed: number;
   repos: Record<
     string,

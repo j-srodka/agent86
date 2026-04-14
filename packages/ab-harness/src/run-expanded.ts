@@ -11,6 +11,12 @@ import {
   PYTHON_STUB_GRAMMAR_DIGEST,
 } from "ts-adapter";
 import type { LogicalUnit, WorkspaceSnapshot } from "ts-adapter";
+import {
+  applyBatch as pyApplyBatch,
+  materializeSnapshot as pyMaterializeSnapshot,
+  canonicalizeSourceForSnapshot as pyCanonicalize,
+} from "@agent86/py-adapter";
+import type { WorkspaceSnapshot as PyWorkspaceSnapshot } from "@agent86/py-adapter";
 
 import {
   approachMetrics,
@@ -28,6 +34,7 @@ import {
   declaredNameFromTsUnit,
   mulberry32,
   sampleTasksFromPythonSnapshot,
+  sampleTasksFromPyAdapterSnapshot,
   sampleTasksFromTsSnapshot,
   type TaskDescriptor,
   writeTaskListJson,
@@ -88,10 +95,10 @@ function tsReplaceNewText(unit: LogicalUnit, fileSource: string, badBrace: boole
   return `function ${name}() {\n  return 42;\n}\n`;
 }
 
-function pyReplaceNewText(unit: LogicalUnit, fileSource: string, bad: boolean): string {
+function pyReplaceNewText(unit: { kind: string; start_byte: number; end_byte: number }, fileSource: string, bad: boolean): string {
   const span = fileSource.slice(unit.start_byte, unit.end_byte);
   const line = span.split("\n")[0] ?? "";
-  if (unit.kind === "class_declaration" || /^class\s/.test(line)) {
+  if (unit.kind === "class_declaration" || unit.kind === "class_definition" || /^class\s/.test(line)) {
     const m = line.match(/^class\s+([A-Za-z_]\w*)/);
     const n = m?.[1] ?? "C";
     if (bad) {
@@ -659,13 +666,249 @@ async function runPyRepo(input: {
   };
 }
 
+function pyTokenChars(snap: PyWorkspaceSnapshot): number {
+  return snap.files.reduce((acc, f) => acc + f.byte_length, 0);
+}
+
+async function readAllPyFileSources(snapshotRoot: string, snapshot: PyWorkspaceSnapshot): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  for (const f of snapshot.files) {
+    const abs = join(snapshotRoot, ...f.path.split("/"));
+    const raw = await readFile(abs, "utf8");
+    m.set(f.path, pyCanonicalize(raw));
+  }
+  return m;
+}
+
+async function runPyAdapterRepo(input: {
+  cloneRoot: string;
+  repo: string;
+  tasks: TaskDescriptor[];
+}): Promise<{ baseline: RepoExpandedBlock; ir: RepoExpandedBlock; skipped_files: ExpandedRepoSkippedFile[] }> {
+  const root = input.cloneRoot;
+  const baselineRows: ExpandedTaskRow[] = [];
+  const irRows: ExpandedTaskRow[] = [];
+  const replaceTasksPy = input.tasks.filter((x) => x.task_category === "replace_unit");
+  const rngBaselinePy = mulberry32(BENCHMARK_SEED + 0xbabe);
+  const badBaselinePy = new Map(
+    replaceTasksPy.map((t) => [t.task_id, rngBaselinePy() < 0.3] as const,
+  ));
+
+  for (const t of input.tasks) {
+    resetGitWorkspace(root);
+    let snap = await pyMaterializeSnapshot({ rootPath: root });
+    let fileSources = await readAllPyFileSources(root, snap);
+    const unit = snap.units.find((u) => u.id === t.target_unit_id);
+    if (!unit) {
+      const fail = approachMetrics({
+        outcome: "failure",
+        failure_reason: "unit_not_found",
+        full_file_reads: 0,
+        round_trips: 1,
+        tokens_chars_read: 0,
+        failed_patches: 1,
+        detail: "py-adapter: unit missing after materialize",
+      });
+      baselineRows.push(enrichMetrics(fail, t, 0));
+      irRows.push(enrichMetrics(fail, t, 0));
+      continue;
+    }
+    const src = fileSources.get(t.file_path);
+    if (!src) {
+      const fail = approachMetrics({
+        outcome: "failure",
+        failure_reason: "file_not_found",
+        full_file_reads: 0,
+        round_trips: 1,
+        tokens_chars_read: 0,
+        failed_patches: 1,
+        detail: "python file missing",
+      });
+      baselineRows.push(enrichMetrics(fail, t, 0));
+      irRows.push(enrichMetrics(fail, t, 0));
+      continue;
+    }
+
+    if (t.task_category === "replace_unit") {
+      const bad = badBaselinePy.get(t.task_id)!;
+      const newText = pyReplaceNewText(unit, src, bad);
+      const naive = src.slice(0, unit.start_byte) + newText + src.slice(unit.end_byte);
+      const parseOk = pythonStubOk(t.file_path, naive, root);
+      const failed = !parseOk ? 1 : 0;
+      const fp = parseOk && bad ? 1 : 0;
+      baselineRows.push(
+        enrichMetrics(
+          approachMetrics({
+            outcome: failed ? "failure" : "success",
+            failure_reason: failed ? "parse_error" : null,
+            full_file_reads: 1,
+            round_trips: 1,
+            tokens_chars_read: src.length,
+            failed_patches: failed,
+            detail: bad ? "baseline python replace (possibly truncated)" : "baseline python replace",
+          }),
+          t,
+          fp,
+        ),
+      );
+
+      resetGitWorkspace(root);
+      snap = await pyMaterializeSnapshot({ rootPath: root });
+      fileSources = await readAllPyFileSources(root, snap);
+      const u2 = snap.units.find((u) => u.id === t.target_unit_id);
+      if (!u2) {
+        irRows.push(
+          enrichMetrics(
+            approachMetrics({
+              outcome: "failure",
+              failure_reason: "unit_not_found",
+              full_file_reads: snap.files.length,
+              round_trips: 1,
+              tokens_chars_read: pyTokenChars(snap),
+              failed_patches: 1,
+              detail: "unit missing before IR replace",
+            }),
+            t,
+            0,
+          ),
+        );
+        continue;
+      }
+      const srcIr = fileSources.get(t.file_path)!;
+      const irText = pyReplaceNewText(u2, srcIr, false);
+      const report = await pyApplyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "replace_unit", target_id: u2.id, new_text: irText }],
+        toolchainFingerprintAtApply: TOOLCHAIN,
+      });
+      const irOk = report.outcome === "success";
+      if (irOk) {
+        snap = await pyMaterializeSnapshot({ rootPath: root, previousSnapshot: snap });
+      }
+      irRows.push(
+        enrichMetrics(
+          approachMetrics({
+            outcome: irOk ? "success" : "failure",
+            failure_reason: irOk ? null : "parse_error",
+            full_file_reads: snap.files.length,
+            round_trips: 1,
+            tokens_chars_read: pyTokenChars(snap),
+            failed_patches: irOk ? 0 : 1,
+            detail: irOk ? "py-adapter replace_unit IR" : report.entries[0]?.message ?? "apply failed",
+            validation_codes: report.entries.map((e) => String(e.code)),
+          }),
+          t,
+          0,
+        ),
+      );
+    } else {
+      // rename_symbol
+      const span = src.slice(unit.start_byte, unit.end_byte);
+      const line = span.split("\n")[0] ?? "";
+      const oldName =
+        line.match(/^def\s+([A-Za-z_]\w*)/)?.[1] ??
+        line.match(/^class\s+([A-Za-z_]\w*)/)?.[1] ??
+        "";
+      const newName = t.rename_to ?? "renamed";
+      if (!oldName) {
+        const fail = approachMetrics({
+          outcome: "failure",
+          failure_reason: "string_not_found",
+          full_file_reads: 1,
+          round_trips: 1,
+          tokens_chars_read: src.length,
+          failed_patches: 1,
+          detail: "no python name",
+        });
+        baselineRows.push(enrichMetrics(fail, t, 0));
+        irRows.push(enrichMetrics(fail, t, 0));
+        continue;
+      }
+      const naive = baselineGlobalRename(src, oldName, newName);
+      const parseOk = pythonStubOk(t.file_path, naive, root);
+      const failed = !parseOk ? 1 : 0;
+      const fp = parseOk && t.has_homonym ? 1 : 0;
+      baselineRows.push(
+        enrichMetrics(
+          approachMetrics({
+            outcome: failed ? "failure" : "success",
+            failure_reason: failed ? "parse_error" : null,
+            full_file_reads: 1,
+            round_trips: 1,
+            tokens_chars_read: src.length,
+            failed_patches: failed,
+            detail: "baseline global rename (python)",
+          }),
+          t,
+          fp,
+        ),
+      );
+
+      resetGitWorkspace(root);
+      snap = await pyMaterializeSnapshot({ rootPath: root });
+      const u2r = snap.units.find((u) => u.id === t.target_unit_id);
+      if (!u2r) {
+        irRows.push(
+          enrichMetrics(
+            approachMetrics({
+              outcome: "failure",
+              failure_reason: "unit_not_found",
+              full_file_reads: snap.files.length,
+              round_trips: 1,
+              tokens_chars_read: pyTokenChars(snap),
+              failed_patches: 1,
+              detail: "unit missing before IR rename",
+            }),
+            t,
+            0,
+          ),
+        );
+        continue;
+      }
+      const report = await pyApplyBatch({
+        snapshotRootPath: root,
+        snapshot: snap,
+        ops: [{ op: "rename_symbol", target_id: u2r.id, new_name: newName, cross_file: false }],
+        toolchainFingerprintAtApply: TOOLCHAIN,
+      });
+      const irOk = report.outcome === "success";
+      if (irOk) {
+        snap = await pyMaterializeSnapshot({ rootPath: root, previousSnapshot: snap });
+      }
+      irRows.push(
+        enrichMetrics(
+          approachMetrics({
+            outcome: irOk ? "success" : "failure",
+            failure_reason: irOk ? null : "parse_error",
+            full_file_reads: snap.files.length,
+            round_trips: 1,
+            tokens_chars_read: pyTokenChars(snap),
+            failed_patches: irOk ? 0 : 1,
+            detail: irOk ? "py-adapter rename_symbol IR" : report.entries[0]?.message ?? "apply failed",
+            validation_codes: report.entries.map((e) => String(e.code)),
+          }),
+          t,
+          0,
+        ),
+      );
+    }
+  }
+
+  return {
+    baseline: { tasks: baselineRows, ...aggregateBaselineBlock(baselineRows) },
+    ir: { tasks: irRows, ...aggregateIrBlock(irRows) },
+    skipped_files: [],
+  };
+}
+
 export interface ExpandedRunResult {
   repos: ExpandedMetricsFile["repos"];
   human_summary: string;
 }
 
 export async function runExpandedBenchmark(input: {
-  repos: Array<{ id: string; cloneRoot: string; url: string; rev: string; language: "typescript" | "python_stub" }>;
+  repos: Array<{ id: string; cloneRoot: string; url: string; rev: string; language: "typescript" | "python_stub" | "python" }>;
   outDir: string;
 }): Promise<ExpandedRunResult> {
   const repos: ExpandedRunResult["repos"] = {};
@@ -681,6 +924,22 @@ export async function runExpandedBenchmark(input: {
       tasks = sampleTasksFromTsSnapshot(snap, fileSources, { repo: r.id, language: "typescript" });
       await writeTaskListJson(join(input.outDir, `ab-tasks-${r.id}.json`), tasks);
       const { baseline, ir, skipped_files } = await runTsRepo({ cloneRoot: r.cloneRoot, repo: r.id, tasks });
+      repos[r.id] = {
+        url: r.url,
+        rev: r.rev,
+        snapshot_root: r.cloneRoot,
+        task_count: tasks.length,
+        skipped_files,
+        baseline,
+        ir,
+      };
+    } else if (r.language === "python") {
+      resetGitWorkspace(r.cloneRoot);
+      const snap = await pyMaterializeSnapshot({ rootPath: r.cloneRoot });
+      const fileSources = await readAllPyFileSources(r.cloneRoot, snap);
+      tasks = sampleTasksFromPyAdapterSnapshot(snap, fileSources, { repo: r.id, language: "python" });
+      await writeTaskListJson(join(input.outDir, `ab-tasks-${r.id}.json`), tasks);
+      const { baseline, ir, skipped_files } = await runPyAdapterRepo({ cloneRoot: r.cloneRoot, repo: r.id, tasks });
       repos[r.id] = {
         url: r.url,
         rev: r.rev,
