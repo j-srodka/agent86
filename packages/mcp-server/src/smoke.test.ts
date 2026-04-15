@@ -39,6 +39,11 @@ async function withSmokeClient<T>(fn: (client: Client, root: string) => Promise<
     `def py_alpha():\n    return 1\n\ndef py_beta():\n    return 2\n`,
     "utf8",
   );
+  await writeFile(
+    join(dir, "src", "smoke.js"),
+    `export function jsAlpha() {\n  return 1;\n}\n\nexport function jsBeta() {\n  return 2;\n}\n`,
+    "utf8",
+  );
   try {
     return await fn(client, dir);
   } finally {
@@ -49,7 +54,21 @@ async function withSmokeClient<T>(fn: (client: Client, root: string) => Promise<
 }
 
 describe("mcp-server smoke", () => {
-  it("materialize_snapshot mixed fixture includes ts and py units and grammar_digests", async () => {
+  it("materialize_snapshot records skipped_jsx_paths when a .jsx file is present", async () => {
+    await withSmokeClient(async (client, root) => {
+      await writeFile(join(root, "src", "skip.jsx"), "export const x = <div />;\n", "utf8");
+      const res = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      expect(res.isError).not.toBe(true);
+      const snap = firstTextJson(res) as CombinedWorkspaceSnapshot & { skipped_jsx_paths?: string[] };
+      expect(Array.isArray(snap.skipped_jsx_paths)).toBe(true);
+      expect(snap.skipped_jsx_paths?.some((p) => p.endsWith("skip.jsx"))).toBe(true);
+    });
+  });
+
+  it("materialize_snapshot mixed fixture includes ts, py, and js units and grammar_digests", async () => {
     await withSmokeClient(async (client, root) => {
       const res = await client.callTool({
         name: "materialize_snapshot",
@@ -59,9 +78,11 @@ describe("mcp-server smoke", () => {
       const snap = firstTextJson(res) as CombinedWorkspaceSnapshot;
       expect(snap.grammar_digests?.ts).toBeTruthy();
       expect(snap.grammar_digests?.py).toBeTruthy();
+      expect(snap.grammar_digests?.js).toBeTruthy();
       const paths = new Set(snap.units.map((u: LogicalUnit) => u.file_path));
       expect(paths.has("src/smoke.ts")).toBe(true);
       expect(paths.has("src/smoke.py")).toBe(true);
+      expect(paths.has("src/smoke.js")).toBe(true);
     });
   });
 
@@ -78,7 +99,20 @@ describe("mcp-server smoke", () => {
     });
   });
 
-  it("list_units on mixed snapshot returns union of ts and py units", async () => {
+  it("list_units with file_path filter returns only units for that .js path", async () => {
+    await withSmokeClient(async (client, root) => {
+      const res = await client.callTool({
+        name: "list_units",
+        arguments: { root_path: root, file_path: "src/smoke.js" },
+      });
+      expect(res.isError).not.toBe(true);
+      const units = firstTextJson(res) as LogicalUnit[];
+      expect(units.length).toBeGreaterThan(0);
+      expect(units.every((u) => u.file_path === "src/smoke.js")).toBe(true);
+    });
+  });
+
+  it("list_units on mixed snapshot returns union of ts, py, and js units", async () => {
     await withSmokeClient(async (client, root) => {
       const res = await client.callTool({
         name: "list_units",
@@ -89,6 +123,7 @@ describe("mcp-server smoke", () => {
       const paths = new Set(units.map((u) => u.file_path));
       expect(paths.has("src/smoke.ts")).toBe(true);
       expect(paths.has("src/smoke.py")).toBe(true);
+      expect(paths.has("src/smoke.js")).toBe(true);
     });
   });
 
@@ -100,11 +135,12 @@ describe("mcp-server smoke", () => {
       });
       expect(res.isError).not.toBe(true);
       const summary = firstTextJson(res) as {
-        grammar_digests: { ts: string; py: string };
+        grammar_digests: { ts: string; py: string; js: string };
         manifest_url: string | null;
       };
       expect(summary.grammar_digests.ts).toBeTruthy();
       expect(summary.grammar_digests.py).toBeTruthy();
+      expect(summary.grammar_digests.js).toBeTruthy();
       expect(summary).toHaveProperty("manifest_url");
     });
   });
@@ -139,6 +175,40 @@ describe("mcp-server smoke", () => {
       const report = firstTextJson(res) as ValidationReport;
       expect(report.outcome).toBe("success");
       const text = await readFile(join(root, "src", "smoke.ts"), "utf8");
+      expect(text).toContain("99");
+    });
+  });
+
+  it("apply_batch replace_unit on js unit succeeds", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const units = snap.units
+        .filter((u: LogicalUnit) => u.file_path === "src/smoke.js")
+        .sort((a: LogicalUnit, b: LogicalUnit) => a.start_byte - b.start_byte);
+      const victim = units.find((u: LogicalUnit) => u.source_text?.includes("jsBeta"));
+      expect(victim).toBeDefined();
+      const res = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot: snap,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: victim!.id,
+              new_text: "function jsBeta() {\n  return 99;\n}\n",
+            },
+          ],
+        },
+      });
+      expect(res.isError).not.toBe(true);
+      const report = firstTextJson(res) as ValidationReport;
+      expect(report.outcome).toBe("success");
+      const text = await readFile(join(root, "src", "smoke.js"), "utf8");
       expect(text).toContain("99");
     });
   });
@@ -243,7 +313,7 @@ describe("mcp-server smoke", () => {
           {
             ...donor,
             id: "f".repeat(64),
-            file_path: "src/bad.js",
+            file_path: "src/bad.go",
             source_text: "function x() {}",
           } as LogicalUnit,
         ],
@@ -277,6 +347,7 @@ describe("mcp-server smoke", () => {
       expect(s.batches_submitted).toBe(0);
       expect(s.snapshots_materialized).toBe(0);
       expect(s.ts_units_seen).toBe(0);
+      expect(s.js_units_seen).toBe(0);
       expect(s.session_start_iso).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       expect(Number.isNaN(Date.parse(s.session_start_iso))).toBe(false);
     });
@@ -295,6 +366,19 @@ describe("mcp-server smoke", () => {
       const s = firstTextJson(rep) as SessionState;
       expect(s.snapshots_materialized).toBe(1);
       expect(s.ts_units_seen).toBeGreaterThan(0);
+      expect(s.js_units_seen).toBeGreaterThan(0);
+    });
+  });
+
+  it("get_session_report after materialize_snapshot shows py_units_seen for mixed fixture", async () => {
+    await withSmokeClient(async (client, root) => {
+      await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const rep = await client.callTool({ name: "get_session_report", arguments: {} });
+      const s = firstTextJson(rep) as SessionState;
+      expect(s.py_units_seen).toBeGreaterThan(0);
     });
   });
 

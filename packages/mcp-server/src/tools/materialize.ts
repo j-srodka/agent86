@@ -11,7 +11,7 @@ export function registerTool(server: McpServer): void {
     "materialize_snapshot",
     {
       description:
-        "Materialize a WorkspaceSnapshot for a workspace root (ts-adapter for .ts, py-adapter for .py). Returns full snapshot JSON including grammar_digests.",
+        "Materialize a WorkspaceSnapshot for a workspace root (ts-adapter for .ts, py-adapter for .py, js-adapter for .js/.mjs/.cjs). Returns full snapshot JSON including grammar_digests.",
       inputSchema: materializeSnapshotInputSchema,
     },
     async (raw: unknown) => {

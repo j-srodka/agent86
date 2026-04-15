@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { resolve } from "node:path";
+import { applyBatch as jsApplyBatch } from "@agent86/js-adapter";
 import { applyBatch as pyApplyBatch } from "@agent86/py-adapter";
 import type { ValidationEntry, ValidationReport, V0Op, WorkspaceSnapshot } from "ts-adapter";
 import {
@@ -13,6 +14,7 @@ import {
 } from "ts-adapter";
 
 import {
+  buildJsApplySubset,
   buildPyApplySubset,
   buildTsApplySubset,
   materializeCombinedSnapshot,
@@ -87,7 +89,7 @@ function isCombinedSnapshotInput(v: unknown): v is CombinedWorkspaceSnapshot {
   if (o.grammar_digests === undefined) return true;
   if (typeof o.grammar_digests !== "object" || o.grammar_digests === null) return false;
   const g = o.grammar_digests as Record<string, unknown>;
-  return typeof g.ts === "string" && typeof g.py === "string";
+  return typeof g.ts === "string" && typeof g.py === "string" && typeof g.js === "string";
 }
 
 function applyBatchToolSuccess(report: ValidationReport, opCount: number): CallToolResult {
@@ -177,6 +179,7 @@ export function registerTool(server: McpServer): void {
 
         const tsOps: { op: V0Op; originalIndex: number }[] = [];
         const pyOps: { op: V0Op; originalIndex: number }[] = [];
+        const jsOps: { op: V0Op; originalIndex: number }[] = [];
         for (let i = 0; i < typedOps.length; i++) {
           const op = typedOps[i]!;
           const tr = resolveOpTarget(snapView, op.target_id);
@@ -184,10 +187,12 @@ export function registerTool(server: McpServer): void {
           const lang = languageForPath(tr.unit.file_path);
           if (lang === "ts") tsOps.push({ op, originalIndex: i });
           else if (lang === "py") pyOps.push({ op, originalIndex: i });
+          else if (lang === "js") jsOps.push({ op, originalIndex: i });
         }
 
         const tsSubset = buildTsApplySubset(combined);
         const pySubset = buildPyApplySubset(combined);
+        const jsSubset = buildJsApplySubset(combined);
 
         const allEntries: ValidationEntry[] = [];
         let mergedOmitted = omittedBlobsFromExternalizedUnits(combined);
@@ -228,6 +233,24 @@ export function registerTool(server: McpServer): void {
           mergedOmitted = mergeOmitted(mergedOmitted, pyReport.omitted_due_to_size);
           mergedDelta = { ...mergedDelta, ...pyReport.id_resolve_delta };
           if (pyReport.outcome !== "success") anyFailure = true;
+        }
+
+        if (!anyFailure && jsOps.length > 0) {
+          const jsReport = await jsApplyBatch({
+            snapshotRootPath: resolve(root_path),
+            snapshot: jsSubset,
+            ops: jsOps.map((o) => o.op),
+            toolchainFingerprintAtApply: toolchain,
+          });
+          allEntries.push(
+            ...remapOpIndices(
+              jsReport.entries,
+              jsOps.map((o) => o.originalIndex),
+            ),
+          );
+          mergedOmitted = mergeOmitted(mergedOmitted, jsReport.omitted_due_to_size);
+          mergedDelta = { ...mergedDelta, ...jsReport.id_resolve_delta };
+          if (jsReport.outcome !== "success") anyFailure = true;
         }
 
         let nextId: string | null = null;

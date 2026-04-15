@@ -16,6 +16,7 @@ export interface SessionState {
   snapshots_materialized: number;
   ts_units_seen: number;
   py_units_seen: number;
+  js_units_seen: number;
   session_start_iso: string;
 }
 
@@ -44,6 +45,7 @@ function createSessionState(): SessionState {
     snapshots_materialized: 0,
     ts_units_seen: 0,
     py_units_seen: 0,
+    js_units_seen: 0,
     session_start_iso: new Date().toISOString(),
   };
 }
@@ -75,6 +77,7 @@ export function recordMaterialize(snapshot: CombinedWorkspaceSnapshot): void {
     const lang = languageForPath(u.file_path);
     if (lang === "ts") sessionState.ts_units_seen += 1;
     else if (lang === "py") sessionState.py_units_seen += 1;
+    else if (lang === "js") sessionState.js_units_seen += 1;
   }
 }
 
