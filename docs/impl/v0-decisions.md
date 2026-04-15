@@ -812,6 +812,81 @@ Unit ids are SHA-256 hex over a canonical string that includes the **grammar dig
 
 **Note:** **`list_units`** with **`file_path`** set validates the filter path with the same extension routing; unsupported extensions fail at the tool boundary with **`lang.agent86.unsupported_file_extension`**.
 
+---
+
+## JavaScript adapter (js-adapter, v1)
+
+**Date (normative for this repo):** 2026-04-14
+
+### Package identity
+
+| Item | Value |
+| ---- | ----- |
+| **Package name** | `@agent86/js-adapter` |
+| **Location** | `packages/js-adapter/` |
+| **Adapter fingerprint** | `name: "js-adapter"`, `semver: "0.0.0"` (see `JS_ADAPTER_FINGERPRINT` in `packages/js-adapter/src/snapshot.ts`) |
+| **Dependencies** | `tree-sitter@0.21.1`, `tree-sitter-javascript@0.23.1` (same native binding major as other adapters) |
+
+### Grammar digest (normative)
+
+**Artifact:** SHA-256 (lowercase hex) of the file **`src/parser.c`** from the pnpm-lockfile-pinned npm package **`tree-sitter-javascript@0.23.1`**.
+
+**Strategy:** Identical to **`ts-adapter`** / **`py-adapter`**: hash the **on-disk parser source bytes** at the resolved install path — **not** the npm version string alone.
+
+**Checked-in constant:** `**JS_GRAMMAR_DIGEST**` in `**packages/js-adapter/src/grammar.ts**`.
+
+**Computed digest (verified once against installed artifact):** `**1150721590eca3c7b6623c7dc3498184f3e22c5d895a08b4806ebf5804f817c3**` — from  
+`node_modules/.pnpm/tree-sitter-javascript@0.23.1_tree-sitter@0.21.1/node_modules/tree-sitter-javascript/src/parser.c`  
+(resolution path may vary with pnpm layout; `**computeJsGrammarDigestFromArtifact()**` resolves via `**tree-sitter-javascript/package.json**`).
+
+**Bump policy:** Same triggers as documented for **`GRAMMAR_DIGEST_V0`** / **`PY_GRAMMAR_DIGEST`** (lockfile version change, artifact path change, overrides, etc.).
+
+### LogicalUnit kinds (v1, conservative)
+
+| Wire `kind` | Tree-sitter / rule | Rationale |
+| ----------- | ------------------ | --------- |
+| `**function_declaration**` | `function_declaration` at **program** scope (including under `export_statement` declaration) | Top-level named functions; primary patch target. |
+| `**class_declaration**` | `class_declaration` at program scope (including exported) | Top-level classes. |
+| `**method_definition**` | `method_definition` direct children of a class `**class_body**` | Instance/static methods inside class bodies. |
+| `**arrow_function**` | `**variable_declarator**` whose `**value**` child is an `**arrow_function**`, when the declarator appears in a **top-level** `**lexical_declaration**` or `**variable_declaration**` (direct program statement or inside `**export_statement**` wrapping that declaration) | Captures common `const foo = () => {}` module pattern at Tier I without walking nested function bodies. **Not** extracted for arrow functions nested inside other functions or non–top-level blocks (`if`, loops, etc.) — judgment call for v1 to avoid closure noise. |
+
+**Out of scope v1:** `**export default**` anonymous `function_expression` / `class` / `arrow_function` (different AST shapes); inner functions; **`.jsx`** (see below).
+
+### File extensions
+
+**In scope:** **`.js`**, **`.mjs`**, **`.cjs`** — walked, parsed, and materialized like other adapters.
+
+**Explicitly skipped — `.jsx`:** Same rationale as **`.tsx`** vs plain TypeScript: JSX is a **superset** surface and would require a different grammar / digest contract. Every materialization discovers **`.jsx`** files under the root (excluding `**node_modules**`) and records each path in **`WorkspaceSnapshot.skipped_jsx_paths`** (repo-relative POSIX, sorted) on the **js-adapter** snapshot wire shape, analogous to **`skipped_tsx_paths`** on **`ts-adapter`**. Parsing `.jsx` with the plain JavaScript grammar is **forbidden**.
+
+### `lang.js.*` codes (normative for js-adapter)
+
+| Code | Severity | Meaning |
+| ---- | -------- | ------- |
+| `**lang.js.cross_file_rename_broad_match**` | warning | Same semantics as **`lang.ts.cross_file_rename_broad_match`** / **`lang.py.cross_file_rename_broad_match`**: `**cross_file: true**` rename and `**rename_surface_report.found**` strictly greater than the default threshold (**10**). |
+| `**lang.js.move_unit_name_conflict**` | error | Destination file already contains a logical unit with the same declared name. |
+| `**lang.js.move_unit_same_file**` | error | `**destination_file**` equals the source file (same-file reorder out of scope). |
+| `**lang.js.rename_unsupported_node_kind**` | error | Target unit kind is not one of the supported rename/move kinds for v1 (`**function_declaration**`, `**class_declaration**`, `**method_definition**`, `**arrow_function**`). |
+
+### Tier I id collision across adapters
+
+Unit ids are SHA-256 over a pipe-delimited preimage that includes **`grammarDigest`**, resolved snapshot root, **`file_path`**, byte range, and **`kind`** (same shape as **`py-adapter`** `**computeUnitId**`). Distinct grammar digest constants (**`GRAMMAR_DIGEST_V0`**, **`PY_GRAMMAR_DIGEST`**, **`JS_GRAMMAR_DIGEST`**) plus **unique repo-relative paths per file** ensure **`.ts`**, **`.py`**, and **`.js`** / **`.mjs`** / **`.cjs`** unit ids do not collide within one workspace root.
+
+### MCP combined snapshot (three adapters)
+
+**Units ordering on the combined wire:** **`ts-adapter`** units first, then **`py-adapter`** units, then **`js-adapter`** units (deterministic; extends the prior ts-then-py rule).
+
+**Combined `snapshot_id`:** Let **`ts_id`**, **`py_id`**, and **`js_id`** be each adapter’s standalone **`snapshot_id`** for the same root and options. Sort the three strings **lexicographically** (UTF-8), join with a single **U+000A** between consecutive strings (**no trailing newline**), UTF-8-encode, then **`combined_snapshot_id = SHA-256`** (lowercase hex) of those bytes.
+
+**`grammar_digests` map (MCP):** **`{ "ts": string, "py": string, "js": string }`** — each value is the pinned constant for that adapter.
+
+**Legacy `grammar_digest` string precedence:** If **`files[]`** includes any **`.ts`** path → **`grammar_digests.ts`**; else if any **`.py`** → **`grammar_digests.py`**; else if any **`.js` / `.mjs` / `.cjs`** → **`grammar_digests.js`**; else nominal **`grammar_digests.ts`**.
+
+**Combined `adapter` fingerprint precedence:** First match among tracked files: has **`.ts`** → **`V0_ADAPTER_FINGERPRINT`**; else has **`.py`** → **`PY_ADAPTER_FINGERPRINT`**; else has **`.js` / `.mjs` / `.cjs`** → **`JS_ADAPTER_FINGERPRINT`**; else **`V0_ADAPTER_FINGERPRINT`** (empty workspace default).
+
+**`apply_batch` call order:** **`ts-adapter`**, then **`py-adapter`**, then **`js-adapter`** (subset batches that are non-empty).
+
+**`skipped_jsx_paths` on combined snapshot:** Merged from the **js-adapter** materialization leg only (sorted with **`skipped_tsx_paths`** remaining from **ts-adapter** only).
+
 ### get_session_report tool (v2)
 
 **Date (normative for this repo):** 2026-04-14
