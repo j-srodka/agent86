@@ -2,6 +2,7 @@
   "name": "@agent86/mcp-server",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "agent86-mcp": "./dist/index.js"

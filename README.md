@@ -89,4 +89,4 @@ External review: **`AGENTS.md`** describes relaying stress-test passes through *
 
 ## License
 
-License: **TBD**
+License: **Apache-2.0**
