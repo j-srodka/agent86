@@ -16,7 +16,7 @@ A small **Agent86** (intermediate representation): a **locked spec** plus a **re
 
 - **Not** a new general-purpose programming language (optional later surface / skin is out of scope for v0).
 - **Not** a replacement for **LSP** or **MCP** — it **complements** them. Agent86 adds a normative op vocabulary, content-addressed snapshots, and structured ValidationReports that MCP alone does not provide. An Agent86 MCP server ships in `packages/mcp-server/` for direct Cursor and Claude Code integration.
-- **Not** a guarantee of production hardening everywhere: v0 is a **prototype**; tighten operational policies after you validate the shape in your environment.
+- **Not** a guarantee of production hardening everywhere: the v0 **spec** is stable and locked, but operational hardening (auth, rate limiting, multi-user trust boundaries) is your responsibility as an adopter.
 
 ## Normative documents
 
