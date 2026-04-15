@@ -2,7 +2,7 @@
 
 **Agent86** is a portable, versioned interchange for agent-to-tool and agent-to-agent code editing: **ops**, **snapshots**, **validation reports**, and **rejection codes** agents can branch on deterministically—instead of prose errors they have to parse.
 
-**Status:** v0 **reference stack complete** in this repo: TypeScript adapter (Tree-sitter), conformance goldens, A/B harness, and manifest discovery—see **`docs/impl/v0-decisions.md`** and the locked spec below.
+**Status:** v2.1.0 — three language adapters (TypeScript, JavaScript, Python), MCP server with five tools, A/B benchmark harness, and conformance goldens. See [CHANGELOG](CHANGELOG.md) for full history.
 
 ## The problem
 
@@ -10,12 +10,12 @@ Agents editing code today still lean on brittle **line-number** references, get 
 
 ## What this is
 
-A small **Agent86** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see the spec’s validation code table). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
+A small **Agent86** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`, `move_unit` (cross-file)), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see the spec’s validation code table). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
 
 **What it is not:**
 
 - **Not** a new general-purpose programming language (optional later surface / skin is out of scope for v0).
-- **Not** a replacement for **LSP** or **MCP**—it **complements** them (see below).
+- **Not** a replacement for **LSP** or **MCP** — it **complements** them. Agent86 adds a normative op vocabulary, content-addressed snapshots, and structured ValidationReports that MCP alone does not provide. An Agent86 MCP server ships in `packages/mcp-server/` for direct Cursor and Claude Code integration.
 - **Not** a guarantee of production hardening everywhere: v0 is a **prototype**; tighten operational policies after you validate the shape in your environment.
 
 ## Normative documents
@@ -31,15 +31,16 @@ A small **Agent86** (intermediate representation): a **locked spec** plus a **re
 
 | Path | Purpose |
 | ---- | ------- |
-| `packages/ts-adapter/` | Reference **TypeScript** adapter: snapshot materialization, `applyBatch`, `WorkspaceSummary`, manifest discovery (`agent-ir.manifest.json`). |
-| `packages/py-adapter/` | Reference **Python** adapter (`.py`): same public surface as `ts-adapter`, Tree-sitter Python grammar. |
-| `packages/js-adapter/` | Reference **JavaScript** adapter (`.js` / `.mjs` / `.cjs`): same public surface as `py-adapter`, Tree-sitter JavaScript grammar. |
-| `packages/conformance/` | Golden fixtures + Vitest runner (determinism, edit-shift ids). |
-| `packages/ab-harness/` | A/B harness: baseline vs IR-backed tasks, `ab-metrics.json`; see [`packages/ab-harness/README.md`](packages/ab-harness/README.md). |
+| `packages/ts-adapter/` | **TypeScript** adapter: snapshot materialization, `applyBatch`, `WorkspaceSummary`, manifest discovery. |
+| `packages/py-adapter/` | **Python** adapter: same interface as ts-adapter, tree-sitter-python grammar. |
+| `packages/js-adapter/` | **JavaScript** adapter (.js/.mjs/.cjs): same interface, tree-sitter-javascript grammar. |
+| `packages/mcp-server/` | **MCP server**: five tools over stdio — `materialize_snapshot`, `list_units`, `build_workspace_summary`, `apply_batch`, `get_session_report`. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md). |
+| `packages/conformance/` | Golden fixtures + Vitest runner (determinism, edit-shift ids, cross-file ops). |
+| `packages/ab-harness/` | A/B harness: baseline vs IR-backed tasks across three OSS repos (Zod, Prettier, Ruff). See [`packages/ab-harness/README.md`](packages/ab-harness/README.md). |
 
 Collaboration rules: [`AGENTS.md`](AGENTS.md). Cursor rules: [`.cursor/rules/agent86.mdc`](.cursor/rules/agent86.mdc).
 
-## Running the v0 stack
+## Running the stack
 
 See [docs/writeup/false-positive-problem.md](docs/writeup/false-positive-problem.md) for benchmark results and methodology.
 
@@ -51,6 +52,28 @@ pnpm -r build
 pnpm --filter ts-adapter test
 pnpm --filter conformance test
 ```
+
+**Python and JavaScript adapters:**
+
+```bash
+pnpm --filter @agent86/py-adapter test
+pnpm --filter @agent86/js-adapter test
+```
+
+**MCP server (build + smoke tests):**
+
+```bash
+pnpm --filter @agent86/mcp-server build
+pnpm --filter @agent86/mcp-server test
+```
+
+**MCP server (run for Cursor / Claude Code):**
+
+```bash
+node packages/mcp-server/dist/index.js
+```
+
+See `packages/mcp-server/README.md` for the Cursor and Claude Code `mcpServers` config block.
 
 Always run **`pnpm -r build`** before **`pnpm --filter conformance test`** when **`packages/ts-adapter/`** has changed (conformance exercises the adapter’s built **`dist`**).
 
@@ -73,15 +96,23 @@ For **`applyBatch`**, the reference adapter enforces (in order): on-disk **gramm
 
 **Local development:** you still need a matching **grammar digest** on the snapshot and a matching **artifact** on disk; the implementation does not offer a “digest-only, ignore adapter identity” shortcut in the apply path. If you change **`tree-sitter-typescript`** or the adapter fingerprint, re-materialize snapshots and update any pinned constants per **`docs/impl/v0-decisions.md`**.
 
-## Handoff and next steps
+The same §9 gates apply to `@agent86/py-adapter` and `@agent86/js-adapter`; each adapter pins its own grammar digest constant (see `docs/impl/v0-decisions.md`).
 
-- **Integration:** Import **`ts-adapter`** from the workspace package; use **`await buildWorkspaceSummary(snapshot, snapshotRootPath)`** (async) with the same root passed to **`materializeSnapshot`**. Optional manifest: **`agent-ir.manifest.json`** at that root sets **`WorkspaceSummary.manifest_url`** (see **`docs/impl/v0-decisions.md`**).
-- **Spec changes:** propose via **`docs/impl/spec-proposals.md`**; humans apply edits to the locked spec file.
-- **v1 roadmap:** cross-file ops, richer manifest validation, TSX grammar scope, and other items called out in the plan’s “Out of scope” section and in **`docs/impl/v0-decisions.md`** (e.g. strict manifest JSON in v1).
+## Using Agent86
 
-**Python, JavaScript, and MCP:** The **`packages/py-adapter/`** package targets Python workspaces with the same adapter surface as **`ts-adapter`** (materialize, apply, summaries), for **`.py`** files. **`packages/js-adapter/`** does the same for JavaScript sources (**`.js`**, **`.mjs`**, **`.cjs`**). **`packages/mcp-server/`** exposes the reference stack over stdio MCP with five tools—**`materialize_snapshot`**, **`list_units`**, **`build_workspace_summary`**, **`apply_batch`**, and **`get_session_report`**—see **`packages/mcp-server/README.md`** for the Cursor (and Claude Code) **`mcpServers`** config block. Mixed-language routing from a single **`root_path`** maps **`.ts`** → **`ts-adapter`**, **`.py`** → **`py-adapter`**, and **`.js` / `.mjs` / `.cjs`** → **`js-adapter`** (see **`docs/impl/v0-decisions.md`**).
+**MCP server (recommended):** Add `packages/mcp-server/` to your Cursor or Claude Code MCP config. The server exposes five tools — call `materialize_snapshot` at session start, use `apply_batch` for all `.ts`, `.js`, and `.py` edits, and call `get_session_report` to see IR activity. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md) for the full config block and tool reference.
 
-External review: **`AGENTS.md`** describes relaying stress-test passes through **Claude (claude.ai)** when you want a second pair of eyes on reports and diffs.
+**Direct API:** Import from the workspace packages:
+
+- `ts-adapter` — TypeScript and TSX-adjacent workspaces
+- `@agent86/py-adapter` — Python workspaces
+- `@agent86/js-adapter` — JavaScript (.js/.mjs/.cjs) workspaces
+
+All three share the same interface: `materializeSnapshot`, `applyBatch`, `buildWorkspaceSummary`.
+
+**Spec changes:** propose via `docs/impl/spec-proposals.md`; humans apply edits to the locked spec file.
+
+**Roadmap:** `.gitignore`-aware file walking, `.jsx`/`.tsx` support, additional language adapters. Contributions welcome — see [AGENTS.md](AGENTS.md) for collaboration rules.
 
 ## Relationship to LSP and MCP
 
