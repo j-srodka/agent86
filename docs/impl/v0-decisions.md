@@ -642,8 +642,7 @@ These codes are emitted by **`@agent86/mcp-server`** on the **MCP tool boundary*
 
 ### Known limitations (this session)
 
-- **Python / mixed-language workspace via `py-adapter`:** **Not wired in MCP.** The MCP server uses **`ts-adapter` only** at the tool boundary until a follow-up workstream wires `py-adapter` for mixed-language roots. The **`py-adapter`** package ships for benchmarks and library consumers.  
-  *(Superseded for routing behavior by **MCP mixed-language routing (v2)** below — `py-adapter` is wired in MCP as of commit `d032e6e`.)*
+- **Historical note — Python in MCP:** An earlier draft said **`py-adapter`** was not wired; that is **obsolete**. **`py-adapter`** and **`js-adapter`** are both wired for mixed-language roots — see **MCP mixed-language routing (v2)** below.
 
 - **No authentication, no rate limiting** — local stdio trust model only.
 
@@ -741,7 +740,7 @@ After py-adapter is green (all 8+ conformance tests pass):
 
 ## MCP mixed-language routing (v2)
 
-**Date (normative for this repo):** 2026-04-14
+**Date (normative for this repo):** 2026-04-14 (updated 2026-04-14 — JavaScript routing)
 
 ### Routing rule
 
@@ -751,60 +750,57 @@ After py-adapter is green (all 8+ conformance tests pass):
 | --------- | ------- |
 | **`.ts`** (but not **`.tsx`**) | `ts-adapter` |
 | **`.py`** | `py-adapter` |
+| **`.js`**, **`.mjs`**, **`.cjs`** | `js-adapter` (`@agent86/js-adapter`) |
 
-**`.tsx`:** Unchanged from v1 — never parsed as TypeScript by `ts-adapter`; paths are listed in **`skipped_tsx_paths`** on the TypeScript materialization leg only. This session does not add TSX handling.
+**`.tsx`:** Unchanged — never parsed as TypeScript by `ts-adapter`; paths are listed in **`skipped_tsx_paths`** on the TypeScript materialization leg only.
 
-**Unsupported paths:** If a tool must route a concrete path (e.g. optional `file_path` on **`list_units`**, or a **`LogicalUnit.file_path`** for an op target) and the extension is not **`.ts`**, **`.py`**, or the TSX skip case above, the MCP tool boundary returns **`isError: true`** with code **`lang.agent86.unsupported_file_extension`**. The **`message`** states the extension and lists supported extensions **`.ts`** and **`.py`**. Arbitrary other files in the workspace (e.g. `README.md`, `package.json`) are **not** scanned for routing; only paths that the tools explicitly resolve against the routing key are rejected.
+**`.jsx`:** Never parsed as plain JavaScript by `js-adapter`; paths are listed in **`skipped_jsx_paths`** on the combined **`WorkspaceSnapshot`** (from the js-adapter materialization leg). See **JavaScript adapter (js-adapter, v1)** below.
+
+**Unsupported paths:** If a tool must route a concrete path (e.g. optional **`file_path`** on **`list_units`**, or a **`LogicalUnit.file_path`** for an op target) and the extension is not routable (**`.ts`**, **`.py`**, **`.js`**, **`.mjs`**, **`.cjs`**), the MCP tool boundary returns **`isError: true`** with code **`lang.agent86.unsupported_file_extension`**. The **`message`** lists supported extensions **`.ts`**, **`.py`**, **`.js`**, **`.mjs`**, and **`.cjs`**.
 
 ### Combined snapshot shape (MCP wire)
 
 A single invocation still returns **one** JSON object shaped like **`WorkspaceSnapshot`**, with these **MCP v2 extensions**:
 
-1. **`grammar_digests`** (object, **always** present on **`materialize_snapshot`** and **`build_workspace_summary`** MCP outputs from this server):  
-   `{ "ts": "<GRAMMAR_DIGEST_V0 hex>", "py": "<PY_GRAMMAR_DIGEST hex>" }`  
-   Values are the same pinned constants as each adapter’s header digest. This does **not** change per-adapter snapshot headers when materializing **`.ts`** or **`.py`** alone.
+1. **`grammar_digests`:** **`{ "ts": "<hex>", "py": "<hex>", "js": "<hex>" }`** — always present on **`materialize_snapshot`** and **`build_workspace_summary`** from this server. Values are the pinned constants (**`GRAMMAR_DIGEST_V0`**, **`PY_GRAMMAR_DIGEST`**, **`JS_GRAMMAR_DIGEST`**) for each adapter.
 
-2. **Backward compatibility — `grammar_digest` (string):** When the workspace contains at least one tracked **`.ts`** file in the combined **`files[]`**, **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`** (same as historical ts-only MCP snapshots). When there are **no** **`.ts`** files but there is at least one **`.py`** file, **`grammar_digest`** is **`PY_GRAMMAR_DIGEST`**. When neither language is present (empty tracked set), **`grammar_digest`** is **`GRAMMAR_DIGEST_V0`**. Callers that only read the legacy string should prefer **`grammar_digests`** for mixed or Python-primary roots. **Field precedence when both are present:** **`grammar_digests`** is authoritative for per-language pins on the MCP combined wire. **`grammar_digest`** duplicates **`grammar_digests.ts`** whenever **`files[]`** includes a **`.ts`** path; if there are no **`.ts`** files but at least one **`.py`**, it duplicates **`grammar_digests.py`**; if **`files[]`** is empty, it duplicates **`grammar_digests.ts`** (nominal default). New integrations should branch on **`grammar_digests`** when present.
+2. **`grammar_digest` (singular, backward compatibility):** **`grammar_digests.ts`** when **`files[]`** includes any **`.ts`** path; else **`grammar_digests.py`** when any **`.py`**; else **`grammar_digests.js`** when any **`.js` / `.mjs` / `.cjs`**; else nominal **`grammar_digests.ts`**. Prefer **`grammar_digests`** for new integrations.
 
-3. **`units[]` ordering:** All units from the **ts-adapter** materialization appear **first** (in the adapter’s existing deterministic order), followed by all units from the **py-adapter** materialization (adapter order). **`files[]`** is the **sorted union** of both adapters’ **`files[]`** by **`path`** (ascending).
+3. **`units[]` ordering:** **ts-adapter** units first, then **py-adapter**, then **js-adapter** (each in that adapter’s deterministic order). **`files[]`** is the **sorted union** of all three adapters’ **`files[]`**.
 
-4. **`snapshot_id` (combined):** Let **`ts_id`** be **`snapshot_id`** from **`materializeSnapshot`** of the **ts-adapter** on the same root (same inline-threshold and merge options as the MCP call), and **`py_id`** from **py-adapter** **`materializeSnapshot`** on the same root. Sort **`[ts_id, py_id]`** lexicographically as UTF-8 strings, join with a single **U+000A** (`\n`) between the first and second string (no trailing newline), UTF-8-encode that string, and set **`combined_snapshot_id = SHA-256` (lowercase hex)** of those bytes. This is the **`snapshot_id`** on the combined **`WorkspaceSnapshot`** returned to the agent.
+4. **`snapshot_id` (combined):** Let **`ts_id`**, **`py_id`**, and **`js_id`** be each adapter’s standalone **`snapshot_id`** for the same root and options. Sort the three strings lexicographically (UTF-8), join with **`\n`** between consecutive strings (no trailing newline), UTF-8-encode, **`combined_snapshot_id = SHA-256`** (lowercase hex).
 
-5. **`id_resolve`:** Map is the shallow merge of the ts snapshot’s **`id_resolve`** and the py snapshot’s **`id_resolve`** (disjoint keys in normal operation).
+5. **`id_resolve`:** Shallow merge **`{ ...ts, ...py, ...js }`** (disjoint keys in normal operation).
 
-6. **`skipped_tsx_paths`:** Taken **only** from the ts-adapter materialization (py-adapter emits **`[]`**).
+6. **`skipped_tsx_paths`:** From **ts-adapter** only.
 
-7. **`skipped_ts_parse_throw`:** Concatenation of both adapters’ parse-throw lists, sorted by **`file_path`**.
+7. **`skipped_jsx_paths`:** From **js-adapter** leg only (sorted).
 
-8. **`adapter` (`AdapterFingerprint` on the combined header):** **`V0_ADAPTER_FINGERPRINT`** when **`files[]`** contains at least one **`.ts`** path; otherwise **`PY_ADAPTER_FINGERPRINT`** when **`files[]`** contains at least one **`.py`** path; if **`files[]`** is empty, **`V0_ADAPTER_FINGERPRINT`** (nominal default).
+8. **`skipped_ts_parse_throw`:** Concatenation of all three adapters’ lists, sorted by **`file_path`**.
+
+9. **`adapter` (combined header fingerprint):** **`V0_ADAPTER_FINGERPRINT`** if any **`.ts`** file; else **`PY_ADAPTER_FINGERPRINT`** if any **`.py`**; else **`JS_ADAPTER_FINGERPRINT`** if any **`.js` / `.mjs` / `.cjs`**; else **`V0_ADAPTER_FINGERPRINT`** (empty default).
 
 ### `apply_batch` dispatch (MCP)
 
-For each op, **`target_id`** is resolved on the **combined** snapshot (live unit lookup and **`id_resolve`** forwarding, same semantics as a single adapter). The owning adapter is determined from the resolved unit’s **`file_path`** extension (**`.ts`** → ts-adapter, **`.py`** → py-adapter). Ops are partitioned into two batches. **Before** calling either adapter, if any **`target_id`** is **unknown** (not live and not resolvable via **`id_resolve`** to a live unit), the tool returns a **successful** tool payload with **`ValidationReport.outcome === "failure"`** and a normative **`unknown_or_superseded_id`** entry (no adapter dispatch). **`ghost_unit`** continues to apply when **`id_resolve`** maps to a non-live id.
+Owning adapter from **`file_path`**: **`.ts`** → ts-adapter, **`.py`** → py-adapter, **`.js` / `.mjs` / `.cjs`** → js-adapter. Ops are partitioned into **three** batches. **Call order:** **ts-adapter** **`applyBatch`**, then **py-adapter**, then **js-adapter** (each skipped if empty).
 
-If a resolved unit’s **`file_path`** is not routable (**`lang.agent86.unsupported_file_extension`**), the MCP tool returns **`isError: true`** at the tool boundary (not a **`ValidationReport`**).
+**`ValidationReport` merge:** **`entries`** concatenated in that same order. **`id_resolve_delta`** shallow-merged (**js** keys last). **`next_snapshot_id`:** after **all invoked** adapter calls succeed, the server re-materializes the combined snapshot; on any failure **`next_snapshot_id`** is **`null`**.
 
-**Subset snapshots:** Each adapter receives a **synthetic** **`WorkspaceSnapshot`** containing only that adapter’s **`files[]`**, **`units[]`**, and the full combined **`id_resolve`**, with **`grammar_digest`**, **`adapter`**, and **`snapshot_id`** set so the adapter’s §9 gates pass (**`snapshot_id`** is the **combined** id for telemetry consistency).
-
-**Op batch size:** The combined **`ops.length`** is checked against **`max_batch_ops`** (50) **before** partition. Each adapter sees at most the same total count.
-
-**Call order:** **ts-adapter** **`applyBatch`** runs first (if any ts ops), then **py-adapter** **`applyBatch`** (if any py ops).
-
-**`ValidationReport` merge:** **`outcome`** is **`failure`** if either adapter returns **`failure`** (or **`partial`** treated as non-success for this merge). **`entries`** are concatenated in order: ts adapter report entries, then py adapter entries. **`omitted_due_to_size`** entries are merged and sorted by **`ref`**. **`id_resolve_delta`** maps are shallow-merged (py keys after ts). **`toolchain_fingerprint_at_apply`** echoes the request. **`snapshot_id`** is the combined input id. **`adapter`** on the merged report matches the **combined** snapshot header fingerprint. **`next_snapshot_id`:** after **both** adapter calls succeed, the server re-runs combined materialization on the root and sets **`next_snapshot_id`** to that fresh **`combined_snapshot_id`**; on any failure **`next_snapshot_id`** is **`null`**.
+Subset snapshots, unknown targets, **`ghost_unit`**, and **`max_batch_ops`** semantics are unchanged from the prior two-adapter description.
 
 ### Cross-adapter atomicity (known limitation)
 
-There is **no** cross-adapter rollback. If the ts batch succeeds and the py batch then **fails**, **disk state reflects ts writes** while the merged **`ValidationReport`** reports **`failure`**. Full atomicity across languages is **out of scope for v2**.
+There is **no** cross-adapter rollback across the three batches. If an earlier language batch succeeds and a later one **fails**, disk may reflect partial writes. Full atomicity across languages is **out of scope**.
 
 ### Tier I `target_id` collision guarantee
 
-Unit ids are SHA-256 hex over a canonical string that includes the **grammar digest** (ts vs py constants differ), **`snapshot_root`**, **`file_path`**, byte range, and **kind**. **Implementation cross-check:** **`py-adapter`** `computeUnitId` hashes a pipe-delimited preimage that includes **`filePathPosix`** (`packages/py-adapter/src/units.ts`), matching the **`ts-adapter`** preimage shape — so **repo-relative path** is always in the id input alongside distinct **`grammarDigest`** values. Ts and py grammar digest constants are **different hex strings**, so the hashed payload differs for any identical path/coordinates across languages. **No extra prefix** is required; **`.ts`** and **`.py`** unit ids cannot collide assuming one workspace root.
+Distinct per-language **`grammar_digest`** constants (**ts**, **py**, **js**) plus **`file_path`** in the unit id preimage prevent cross-language id collisions. See **JavaScript adapter (js-adapter, v1)** for the js-adapter preimage shape.
 
 ### `lang.*` extension (MCP tool boundary)
 
 | Code | Severity | Meaning |
 | ---- | -------- | ------- |
-| **`lang.agent86.unsupported_file_extension`** | error (tool error) | Path extension is not **`.ts`** or **`.py`** (and not a routable case); **`evidence`** includes **`file_path`**, **`extension`**, and **`supported_extensions: [".ts", ".py"]`**. |
+| **`lang.agent86.unsupported_file_extension`** | error (tool error) | Path extension is not routable; **`evidence.supported_extensions`** lists **`.ts`**, **`.py`**, **`.js`**, **`.mjs`**, **`.cjs`**. |
 
 ### `list_units`
 
@@ -871,22 +867,6 @@ Unit ids are SHA-256 hex over a canonical string that includes the **grammar dig
 
 Unit ids are SHA-256 over a pipe-delimited preimage that includes **`grammarDigest`**, resolved snapshot root, **`file_path`**, byte range, and **`kind`** (same shape as **`py-adapter`** `**computeUnitId**`). Distinct grammar digest constants (**`GRAMMAR_DIGEST_V0`**, **`PY_GRAMMAR_DIGEST`**, **`JS_GRAMMAR_DIGEST`**) plus **unique repo-relative paths per file** ensure **`.ts`**, **`.py`**, and **`.js`** / **`.mjs`** / **`.cjs`** unit ids do not collide within one workspace root.
 
-### MCP combined snapshot (three adapters)
-
-**Units ordering on the combined wire:** **`ts-adapter`** units first, then **`py-adapter`** units, then **`js-adapter`** units (deterministic; extends the prior ts-then-py rule).
-
-**Combined `snapshot_id`:** Let **`ts_id`**, **`py_id`**, and **`js_id`** be each adapter’s standalone **`snapshot_id`** for the same root and options. Sort the three strings **lexicographically** (UTF-8), join with a single **U+000A** between consecutive strings (**no trailing newline**), UTF-8-encode, then **`combined_snapshot_id = SHA-256`** (lowercase hex) of those bytes.
-
-**`grammar_digests` map (MCP):** **`{ "ts": string, "py": string, "js": string }`** — each value is the pinned constant for that adapter.
-
-**Legacy `grammar_digest` string precedence:** If **`files[]`** includes any **`.ts`** path → **`grammar_digests.ts`**; else if any **`.py`** → **`grammar_digests.py`**; else if any **`.js` / `.mjs` / `.cjs`** → **`grammar_digests.js`**; else nominal **`grammar_digests.ts`**.
-
-**Combined `adapter` fingerprint precedence:** First match among tracked files: has **`.ts`** → **`V0_ADAPTER_FINGERPRINT`**; else has **`.py`** → **`PY_ADAPTER_FINGERPRINT`**; else has **`.js` / `.mjs` / `.cjs`** → **`JS_ADAPTER_FINGERPRINT`**; else **`V0_ADAPTER_FINGERPRINT`** (empty workspace default).
-
-**`apply_batch` call order:** **`ts-adapter`**, then **`py-adapter`**, then **`js-adapter`** (subset batches that are non-empty).
-
-**`skipped_jsx_paths` on combined snapshot:** Merged from the **js-adapter** materialization leg only (sorted with **`skipped_tsx_paths`** remaining from **ts-adapter** only).
-
 ### get_session_report tool (v2)
 
 **Date (normative for this repo):** 2026-04-14
@@ -897,4 +877,4 @@ Unit ids are SHA-256 over a pipe-delimited preimage that includes **`grammarDige
 
 - **No persistence rationale:** The server uses **stdio**; typical hosts (e.g. Cursor) spawn **one process per editor session**. Process exit is the natural reset boundary; persisting tallies would not reflect “session” semantics and would add sync and privacy concerns without a stated product requirement.
 
-- **Wire schema:** Tool name **`get_session_report`**. Arguments are the **empty object `{}`** on the MCP tool boundary (**snake_case** field names on other tools remain unchanged). The tool result is **JSON text** mirroring the in-memory **`SessionState`** object (same snake_case keys as the wire tally).
+- **Wire schema:** Tool name **`get_session_report`**. Arguments are the **empty object `{}`** on the MCP tool boundary (**snake_case** field names on other tools remain unchanged). The tool result is **JSON text** mirroring the in-memory **`SessionState`** object (same snake_case keys as the wire tally), including **`js_units_seen`** (count of logical units whose **`file_path`** ends with **`.js`**, **`.mjs`**, or **`.cjs`** after each **`materialize_snapshot`**).

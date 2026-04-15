@@ -32,6 +32,8 @@ A small **Agent86** (intermediate representation): a **locked spec** plus a **re
 | Path | Purpose |
 | ---- | ------- |
 | `packages/ts-adapter/` | Reference **TypeScript** adapter: snapshot materialization, `applyBatch`, `WorkspaceSummary`, manifest discovery (`agent-ir.manifest.json`). |
+| `packages/py-adapter/` | Reference **Python** adapter (`.py`): same public surface as `ts-adapter`, Tree-sitter Python grammar. |
+| `packages/js-adapter/` | Reference **JavaScript** adapter (`.js` / `.mjs` / `.cjs`): same public surface as `py-adapter`, Tree-sitter JavaScript grammar. |
 | `packages/conformance/` | Golden fixtures + Vitest runner (determinism, edit-shift ids). |
 | `packages/ab-harness/` | A/B harness: baseline vs IR-backed tasks, `ab-metrics.json`; see [`packages/ab-harness/README.md`](packages/ab-harness/README.md). |
 
@@ -77,7 +79,7 @@ For **`applyBatch`**, the reference adapter enforces (in order): on-disk **gramm
 - **Spec changes:** propose via **`docs/impl/spec-proposals.md`**; humans apply edits to the locked spec file.
 - **v1 roadmap:** cross-file ops, richer manifest validation, TSX grammar scope, and other items called out in the plan’s “Out of scope” section and in **`docs/impl/v0-decisions.md`** (e.g. strict manifest JSON in v1).
 
-**Python and MCP:** The **`packages/py-adapter/`** package targets Python workspaces with the same adapter surface as **`ts-adapter`** (materialize, apply, summaries), so you can treat it as a drop-in for **`.py`** files the way **`ts-adapter`** covers TypeScript. **`packages/mcp-server/`** exposes the reference stack over stdio MCP with four tools—**`materialize_snapshot`**, **`list_units`**, **`build_workspace_summary`**, and **`apply_batch`**—see **`packages/mcp-server/README.md`** for the Cursor (and Claude Code) **`mcpServers`** config block. Automatic mixed-language routing (for example **`.ts`** → **`ts-adapter`**, **`.py`** → **`py-adapter`**) from a single entry point is planned for the next release.
+**Python, JavaScript, and MCP:** The **`packages/py-adapter/`** package targets Python workspaces with the same adapter surface as **`ts-adapter`** (materialize, apply, summaries), for **`.py`** files. **`packages/js-adapter/`** does the same for JavaScript sources (**`.js`**, **`.mjs`**, **`.cjs`**). **`packages/mcp-server/`** exposes the reference stack over stdio MCP with five tools—**`materialize_snapshot`**, **`list_units`**, **`build_workspace_summary`**, **`apply_batch`**, and **`get_session_report`**—see **`packages/mcp-server/README.md`** for the Cursor (and Claude Code) **`mcpServers`** config block. Mixed-language routing from a single **`root_path`** maps **`.ts`** → **`ts-adapter`**, **`.py`** → **`py-adapter`**, and **`.js` / `.mjs` / `.cjs`** → **`js-adapter`** (see **`docs/impl/v0-decisions.md`**).
 
 External review: **`AGENTS.md`** describes relaying stress-test passes through **Claude (claude.ai)** when you want a second pair of eyes on reports and diffs.
 

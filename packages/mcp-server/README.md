@@ -1,6 +1,6 @@
 # @agent86/mcp-server
 
-This package exposes the Agent86 reference adapters over the **Model Context Protocol (MCP)** using **stdio** only: materialize snapshots, list addressable logical units, read workspace summaries, and apply validated op batches with structured `ValidationReport` outcomes. **`ts-adapter`** handles **`.ts`** sources and **`@agent86/py-adapter`** handles **`.py`** sources (see **Mixed-language workspaces** below). Hosts such as Cursor or Claude Code can spawn `agent86-mcp` as a subprocess and call tools without custom glue code.
+This package exposes the Agent86 reference adapters over the **Model Context Protocol (MCP)** using **stdio** only: materialize snapshots, list addressable logical units, read workspace summaries, and apply validated op batches with structured `ValidationReport` outcomes. **`ts-adapter`** handles **`.ts`** sources, **`@agent86/py-adapter`** handles **`.py`**, and **`@agent86/js-adapter`** handles **`.js`**, **`.mjs`**, and **`.cjs`** (see **Mixed-language workspaces** below). Hosts such as Cursor or Claude Code can spawn `agent86-mcp` as a subprocess and call tools without custom glue code.
 
 ## Cursor
 
@@ -18,20 +18,21 @@ Add a server entry to your MCP configuration (for example `~/.cursor/mcp.json` o
 }
 ```
 
-Use the path to **built** `dist/index.js` from your clone; adjust `args` to an absolute path if the config file is not at the repository root. Run `pnpm build:mcp` (or `pnpm --filter @agent86/py-adapter build && pnpm --filter @agent86/mcp-server build`) before starting the editor.
+Use the path to **built** `dist/index.js` from your clone; adjust `args` to an absolute path if the config file is not at the repository root. Run `pnpm build:mcp` (or `pnpm --filter @agent86/py-adapter build && pnpm --filter @agent86/js-adapter build && pnpm --filter @agent86/mcp-server build`) before starting the editor.
 
 ## Mixed-language workspaces
 
-- **Supported tracked sources:** **`.ts`** (TypeScript grammar via `ts-adapter`) and **`.py`** (Python grammar via `@agent86/py-adapter`).
+- **Supported tracked sources:** **`.ts`** (TypeScript via `ts-adapter`), **`.py`** (Python via `@agent86/py-adapter`), and **`.js` / `.mjs` / `.cjs`** (JavaScript via `@agent86/js-adapter`).
 - **Routing:** By **file extension only** (no content sniffing): each tool resolves ops and units using the unit’s **`file_path`** suffix.
-- **Combined snapshot:** `materialize_snapshot` merges TypeScript and Python materializations into one **`WorkspaceSnapshot`** (ts units first, then py units) and adds **`grammar_digests: { ts, py }`** alongside the legacy **`grammar_digest`** string. See `docs/impl/v0-decisions.md` (**MCP mixed-language routing (v2)**) for the combined **`snapshot_id`** formula and wire details.
-- **Which grammar field to read:** When both are present, treat **`grammar_digests`** as authoritative for per-language pins. **`grammar_digest`** (singular) is retained for older single-language consumers: it mirrors **`grammar_digests.ts`** if the snapshot includes any **`.ts`** file, otherwise **`grammar_digests.py`** if only Python is tracked, otherwise **`grammar_digests.ts`** as the nominal empty-workspace default.
-- **Cross-adapter atomicity:** A single **`apply_batch`** call may run the TypeScript batch and then the Python batch. **There is no cross-language rollback:** if the Python step fails after the TypeScript step succeeded, **TypeScript file changes from that call are already on disk**. Treat multi-language batches accordingly (smaller batches, or separate calls per language, if you need a simpler failure surface).
+- **Combined snapshot:** `materialize_snapshot` merges TypeScript, Python, and JavaScript materializations into one **`WorkspaceSnapshot`** (ts units first, then py, then js) and adds **`grammar_digests: { ts, py, js }`** alongside the legacy **`grammar_digest`** string. See `docs/impl/v0-decisions.md` (**MCP mixed-language routing (v2)**) for the combined **`snapshot_id`** formula and wire details.
+- **Which grammar field to read:** When both are present, treat **`grammar_digests`** as authoritative for per-language pins. **`grammar_digest`** (singular) is retained for older single-language consumers: it mirrors **`grammar_digests.ts`** if the snapshot includes any **`.ts`** file, otherwise **`grammar_digests.py`** if only Python is tracked, otherwise **`grammar_digests.js`** if only JavaScript extensions are tracked, otherwise **`grammar_digests.ts`** as the nominal empty-workspace default.
+- **Cross-adapter atomicity:** A single **`apply_batch`** call may run the TypeScript batch, then the Python batch, then the JavaScript batch. **There is no cross-language rollback:** if a later step fails after an earlier one succeeded, **earlier language writes from that call may already be on disk**. Treat multi-language batches accordingly (smaller batches, or separate calls per language, if you need a simpler failure surface).
 - **`.tsx` files:** Still **not** parsed as TypeScript; paths are recorded in **`skipped_tsx_paths`** on the snapshot (same as `ts-adapter` alone).
+- **`.jsx` files:** Not parsed as plain JavaScript; paths are recorded in **`skipped_jsx_paths`** on the combined snapshot (from the js-adapter leg).
 
 ## Scoping and exclusions
 
-The MCP server snapshots **all** `.ts` and `.py` files found under `root_path`, including subdirectories not tracked by git (e.g. benchmark caches, git worktrees, build outputs). It does **not** currently read `.gitignore` or apply any exclusion list.
+The MCP server snapshots **all** `.ts`, `.py`, `.js`, `.mjs`, and `.cjs` files found under `root_path`, including subdirectories not tracked by git (e.g. benchmark caches, git worktrees, build outputs). It does **not** currently read `.gitignore` or apply any exclusion list.
 
 **Recommendation:** point `root_path` at the package or subdirectory you want to edit, not at a monorepo or workspace root that contains large non-source trees. For example, if you are editing `packages/my-lib/`, use:
 
@@ -67,6 +68,7 @@ Call `get_session_report` at any time to see what the IR has done since the serv
   "snapshots_materialized": 4,
   "ts_units_seen": 61,
   "py_units_seen": 24,
+  "js_units_seen": 12,
   "session_start_iso": "2026-04-14T..."
 }
 ```
@@ -83,7 +85,7 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 
 | Tool | Input | Output |
 | ---- | ----- | ------ |
-| `materialize_snapshot` | `{ root_path: string, inline_threshold_bytes?: number }` | `WorkspaceSnapshot` (combined `.ts` + `.py`; includes `grammar_digests`) |
+| `materialize_snapshot` | `{ root_path: string, inline_threshold_bytes?: number }` | `WorkspaceSnapshot` (combined `.ts` + `.py` + `.js`/`.mjs`/`.cjs`; includes `grammar_digests` and `skipped_jsx_paths`) |
 | `list_units` | `{ root_path: string, file_path?: string }` | `LogicalUnit[]` |
 | `build_workspace_summary` | `{ root_path: string }` | `WorkspaceSummary` (adds `grammar_digests`; `manifest_url` from ts read path) |
 | `apply_batch` | `{ root_path: string, snapshot: WorkspaceSnapshot, ops: V0Op[], toolchain_fingerprint_at_apply?: AdapterFingerprint }` | `ValidationReport` |
