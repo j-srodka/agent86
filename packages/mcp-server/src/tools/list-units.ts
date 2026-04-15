@@ -15,7 +15,7 @@ export function registerTool(server: McpServer): void {
     "list_units",
     {
       description:
-        "List Tier I LogicalUnit records for a workspace root (materializes internally). Optional file_path filters to one source file. Sorted by file_path then start_byte.",
+        "List all logical units (functions, classes, methods) in the workspace. Returns stable unit IDs for use with apply_batch. Call after materialize_snapshot. Required input: root_path.",
       inputSchema: listUnitsInputSchema,
     },
     async (raw: unknown) => {

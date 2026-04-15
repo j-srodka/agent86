@@ -102,7 +102,7 @@ export function registerTool(server: McpServer): void {
     "apply_batch",
     {
       description:
-        "Apply a batch of v0/v1 ops against a caller-supplied WorkspaceSnapshot. Returns ValidationReport JSON; normative adapter failures use report outcome and entries[].code (not MCP transport errors).",
+        "PREFER this tool over direct file edits for all .ts, .js, .mjs, .cjs, and .py changes. Applies a validated batch of ops (replace_unit, rename_symbol, move_unit) against a materialized snapshot with full integrity gates — prevents silent corruption, span drift, and false-positive renames. Returns a structured ValidationReport with normative rejection codes. Required inputs: root_path, snapshot (from materialize_snapshot), ops array.",
       inputSchema: applyBatchInputSchema,
     },
     async (raw: unknown) => {

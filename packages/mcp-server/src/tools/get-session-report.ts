@@ -9,7 +9,7 @@ export function registerTool(server: McpServer): void {
     "get_session_report",
     {
       description:
-        "Returns a running tally of IR activity in this server session: ops submitted/succeeded/rejected, false positives prevented, warning codes seen, and unit counts. Resets on server restart.",
+        "Returns a running tally of Agent86 IR activity in this server session: ops submitted, ops succeeded, ops rejected, false positives prevented (batches blocked before any file was written), warning codes seen, and unit counts by language. Call at any time to gauge IR effectiveness. No inputs required.",
       inputSchema: getSessionReportInputSchema,
     },
     async (raw: unknown) => {

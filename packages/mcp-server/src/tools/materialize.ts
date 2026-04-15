@@ -11,7 +11,7 @@ export function registerTool(server: McpServer): void {
     "materialize_snapshot",
     {
       description:
-        "Materialize a WorkspaceSnapshot for a workspace root (ts-adapter for .ts, py-adapter for .py, js-adapter for .js/.mjs/.cjs). Returns full snapshot JSON including grammar_digests.",
+        "ALWAYS call this tool at the start of any coding session before reading, editing, or analyzing .ts, .js, .mjs, .cjs, or .py files. Builds a content-addressed WorkspaceSnapshot of root_path required by all other Agent86 tools. Call once per session; re-call only if files change outside of apply_batch. Required input: root_path (absolute path to the project directory you are editing).",
       inputSchema: materializeSnapshotInputSchema,
     },
     async (raw: unknown) => {

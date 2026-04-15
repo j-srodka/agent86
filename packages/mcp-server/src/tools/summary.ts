@@ -25,7 +25,7 @@ export function registerTool(server: McpServer): void {
     "build_workspace_summary",
     {
       description:
-        "Build WorkspaceSummary (read path) for a workspace root by materializing (.ts + .py + .js/.mjs/.cjs) then summarizing.",
+        "Get a cheap read-path summary of the workspace: unit counts, grammar digests, max_batch_ops limit, and policy flags. Use this to orient before planning edits. Call after materialize_snapshot. Required input: root_path.",
       inputSchema: buildWorkspaceSummaryInputSchema,
     },
     async (raw: unknown) => {
