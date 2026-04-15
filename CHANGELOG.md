@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [2.1.0] — 2026-04-14
+
+- Added packages/js-adapter/ — JavaScript adapter for .js, .mjs, .cjs
+  files using tree-sitter-javascript; same op surface as ts-adapter
+  and py-adapter
+- MCP server now routes .js/.mjs/.cjs through js-adapter;
+  grammar_digests response includes js key
+- get_session_report now tracks js_units_seen
+- .jsx files are skipped and reported in skipped_jsx_paths on the
+  combined snapshot (analogous to .tsx/skipped_tsx_paths)
+- cross_file rename in js-adapter scoped to JS extensions only
+
 ## [2.0.0] — 2026-04-14
 
 - MCP stdio server (@agent86/mcp-server): four tools
