@@ -124,6 +124,10 @@ function mergeReports(a: RenameSurfaceReport, b: RenameSurfaceReport): RenameSur
   };
 }
 
+function isJsSourcePath(posix: string): boolean {
+  return posix.endsWith(".js") || posix.endsWith(".mjs") || posix.endsWith(".cjs");
+}
+
 const RENAMEABLE_KINDS = new Set<JsUnitKind>([
   "function_declaration",
   "class_declaration",
@@ -201,7 +205,7 @@ export async function applyRenameSymbol(input: RenameSymbolInput): Promise<Renam
   if (crossFile) {
     const others = snapshot.files
       .map((f) => f.path)
-      .filter((p) => p !== unit.file_path)
+      .filter((p) => p !== unit.file_path && isJsSourcePath(p))
       .sort((a, b) => a.localeCompare(b));
     for (const rel of others) {
       const oAbs = join(snapshotRootPath, ...rel.split("/"));
