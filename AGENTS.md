@@ -1,4 +1,4 @@
-# AGENTS.md — agent86 multi-agent collaboration
+# AGENTS.md — Agent86 multi-agent collaboration
 
 ## Purpose
 

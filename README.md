@@ -1,6 +1,6 @@
-# agent86
+# Agent86
 
-**agent86** is a portable, versioned interchange for agent-to-tool and agent-to-agent code editing: **ops**, **snapshots**, **validation reports**, and **rejection codes** agents can branch on deterministically—instead of prose errors they have to parse.
+**Agent86** is a portable, versioned interchange for agent-to-tool and agent-to-agent code editing: **ops**, **snapshots**, **validation reports**, and **rejection codes** agents can branch on deterministically—instead of prose errors they have to parse.
 
 **Status:** v0 **reference stack complete** in this repo: TypeScript adapter (Tree-sitter), conformance goldens, A/B harness, and manifest discovery—see **`docs/impl/v0-decisions.md`** and the locked spec below.
 
