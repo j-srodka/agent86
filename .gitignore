@@ -155,3 +155,6 @@ vendor/
 ab-metrics.json
 ab-metrics-trpc.json
 ab-metrics-expanded.json
+
+# pnpm store
+.pnpm-store/
