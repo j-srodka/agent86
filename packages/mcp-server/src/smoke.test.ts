@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -515,6 +515,130 @@ describe("mcp-server smoke", () => {
       const s = firstTextJson(rep) as SessionState;
       expect(s.batches_submitted).toBe(3);
       expect(s.false_positives_prevented).toBe(1);
+    });
+  });
+
+  it("materialize_snapshot writes cache file to .agent86/snapshots/<snapshot_id>.json", async () => {
+    await withSmokeClient(async (client, root) => {
+      const res = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      expect(res.isError).not.toBe(true);
+      const snap = firstTextJson(res) as CombinedWorkspaceSnapshot;
+      const cachePath = join(root, ".agent86", "snapshots", `${snap.snapshot_id}.json`);
+      const raw = await readFile(cachePath, "utf8");
+      const roundTrip = JSON.parse(raw) as CombinedWorkspaceSnapshot;
+      expect(roundTrip.snapshot_id).toBe(snap.snapshot_id);
+    });
+  });
+
+  it("apply_batch with snapshot_id resolves from cache and succeeds", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const units = snap.units
+        .filter((u: LogicalUnit) => u.file_path === "src/smoke.ts")
+        .sort((a: LogicalUnit, b: LogicalUnit) => a.start_byte - b.start_byte);
+      const victim = units.find((u: LogicalUnit) => u.source_text?.includes("beta"));
+      expect(victim).toBeDefined();
+      const res = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot_id: snap.snapshot_id,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: victim!.id,
+              new_text: "function beta(): number {\n  return 99;\n}\n",
+            },
+          ],
+        },
+      });
+      expect(res.isError).not.toBe(true);
+      const report = firstTextJson(res) as ValidationReport;
+      expect(report.outcome).toBe("success");
+      const text = await readFile(join(root, "src", "smoke.ts"), "utf8");
+      expect(text).toContain("99");
+    });
+  });
+
+  it("apply_batch with snapshot_id after cache file deleted returns lang.agent86.snapshot_cache_miss", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      await unlink(join(root, ".agent86", "snapshots", `${snap.snapshot_id}.json`));
+      const units = snap.units
+        .filter((u: LogicalUnit) => u.file_path === "src/smoke.ts")
+        .sort((a: LogicalUnit, b: LogicalUnit) => a.start_byte - b.start_byte);
+      const victim = units.find((u: LogicalUnit) => u.source_text?.includes("beta"));
+      expect(victim).toBeDefined();
+      const res = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot_id: snap.snapshot_id,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: victim!.id,
+              new_text: "function beta(): number {\n  return 99;\n}\n",
+            },
+          ],
+        },
+      });
+      expect(res.isError).toBe(true);
+      const payload = firstTextJson(res) as { code: string; message: string };
+      expect(payload.code).toBe("lang.agent86.snapshot_cache_miss");
+      expect(payload.message.toLowerCase()).toContain("re-run materialize_snapshot");
+    });
+  });
+
+  it("apply_batch with both snapshot_id and snapshot returns tool error", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const res = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          snapshot_id: snap.snapshot_id,
+          snapshot: snap,
+          ops: [],
+        },
+      });
+      expect(res.isError).toBe(true);
+      expect((firstTextJson(res) as { code: string }).code).toBe("lang.agent86.invalid_tool_input");
+    });
+  });
+
+  it("apply_batch with neither snapshot_id nor snapshot returns tool error", async () => {
+    await withSmokeClient(async (client, root) => {
+      const res = await client.callTool({
+        name: "apply_batch",
+        arguments: {
+          root_path: root,
+          ops: [
+            {
+              op: "replace_unit",
+              target_id: "0".repeat(64),
+              new_text: "function x() {}",
+            },
+          ],
+        },
+      });
+      expect(res.isError).toBe(true);
+      expect((firstTextJson(res) as { code: string }).code).toBe("lang.agent86.invalid_tool_input");
     });
   });
 });
