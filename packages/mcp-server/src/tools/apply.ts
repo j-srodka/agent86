@@ -23,6 +23,7 @@ import {
 import { jsonToolError, jsonToolSuccess, runToolHandler, zodToToolInputError } from "../errors.js";
 import { assertSupportedLanguage, languageForPath } from "../router.js";
 import { applyBatchInputSchema } from "../schemas.js";
+import { readSnapshotCache } from "../snapshot-cache.js";
 import { recordApplyBatch } from "../session.js";
 import { isV0OpArray, isWorkspaceSnapshot } from "../snapshot-guards.js";
 
@@ -102,22 +103,48 @@ export function registerTool(server: McpServer): void {
     "apply_batch",
     {
       description:
-        "PREFER this tool over direct file edits for all .ts, .js, .mjs, .cjs, and .py changes. Applies a validated batch of ops (replace_unit, rename_symbol, move_unit) against a materialized snapshot with full integrity gates — prevents silent corruption, span drift, and false-positive renames. Returns a structured ValidationReport with normative rejection codes. Required inputs: root_path, snapshot (from materialize_snapshot), ops array.",
+        "PREFER this tool over direct file edits for all .ts, .js, .mjs, .cjs, and .py changes. Applies a validated batch of ops (replace_unit, rename_symbol, move_unit) against a materialized snapshot with full integrity gates — prevents silent corruption, span drift, and false-positive renames. Returns a structured ValidationReport with normative rejection codes. Required inputs: root_path, exactly one of snapshot (full object from materialize_snapshot) or snapshot_id (string from materialize_snapshot), and ops array. Accepts snapshot_id (string, from materialize_snapshot) instead of the full snapshot object — strongly recommended for large workspaces to avoid MCP payload size limits. When submitting multiple ops on the same file, order them by descending start_byte (edit lower positions first) to avoid unknown_or_superseded_id on subsequent ops.",
       inputSchema: applyBatchInputSchema,
     },
     async (raw: unknown) => {
       const parsed = applyBatchInputSchema.safeParse(raw);
       if (!parsed.success) return zodToToolInputError(parsed.error);
       return runToolHandler(async () => {
-        const { root_path, snapshot, ops, toolchain_fingerprint_at_apply } = parsed.data;
-        if (!isCombinedSnapshotInput(snapshot)) {
+        const { root_path, ops, toolchain_fingerprint_at_apply } = parsed.data;
+        const hasId = parsed.data.snapshot_id !== undefined;
+        const hasSnap = parsed.data.snapshot !== undefined;
+        if (hasId === hasSnap) {
           return jsonToolError({
             code: "lang.agent86.invalid_tool_input",
-            message: "snapshot is not a valid WorkspaceSnapshot shape.",
-            evidence: { field: "snapshot" },
+            message: "provide exactly one of snapshot_id or snapshot",
+            evidence: { field: hasId && hasSnap ? "snapshot_id,snapshot" : "snapshot" },
           });
         }
-        const combined = snapshot as CombinedWorkspaceSnapshot;
+        let combined: CombinedWorkspaceSnapshot;
+        const resolvedRoot = resolve(root_path);
+        if (parsed.data.snapshot_id !== undefined) {
+          const cached = await readSnapshotCache(resolvedRoot, parsed.data.snapshot_id);
+          if (!cached) {
+            return jsonToolError({
+              code: "lang.agent86.snapshot_cache_miss",
+              message:
+                `Snapshot ${parsed.data.snapshot_id} not found in cache at ` +
+                `${resolvedRoot}/.agent86/snapshots/. Re-run materialize_snapshot ` +
+                `to rebuild the cache, then retry apply_batch with the new snapshot_id.`,
+            });
+          }
+          combined = cached;
+        } else {
+          const snapshot = parsed.data.snapshot;
+          if (!isCombinedSnapshotInput(snapshot)) {
+            return jsonToolError({
+              code: "lang.agent86.invalid_tool_input",
+              message: "snapshot is not a valid WorkspaceSnapshot shape.",
+              evidence: { field: "snapshot" },
+            });
+          }
+          combined = snapshot as CombinedWorkspaceSnapshot;
+        }
         if (!isV0OpArray(ops)) {
           return jsonToolError({
             code: "lang.agent86.invalid_tool_input",
@@ -201,7 +228,7 @@ export function registerTool(server: McpServer): void {
 
         if (tsOps.length > 0) {
           const tsReport = await tsApplyBatch({
-            snapshotRootPath: resolve(root_path),
+            snapshotRootPath: resolvedRoot,
             snapshot: tsSubset,
             ops: tsOps.map((o) => o.op),
             toolchainFingerprintAtApply: toolchain,
@@ -219,7 +246,7 @@ export function registerTool(server: McpServer): void {
 
         if (!anyFailure && pyOps.length > 0) {
           const pyReport = await pyApplyBatch({
-            snapshotRootPath: resolve(root_path),
+            snapshotRootPath: resolvedRoot,
             snapshot: pySubset,
             ops: pyOps.map((o) => o.op),
             toolchainFingerprintAtApply: toolchain,
@@ -237,7 +264,7 @@ export function registerTool(server: McpServer): void {
 
         if (!anyFailure && jsOps.length > 0) {
           const jsReport = await jsApplyBatch({
-            snapshotRootPath: resolve(root_path),
+            snapshotRootPath: resolvedRoot,
             snapshot: jsSubset,
             ops: jsOps.map((o) => o.op),
             toolchainFingerprintAtApply: toolchain,
@@ -256,7 +283,7 @@ export function registerTool(server: McpServer): void {
         let nextId: string | null = null;
         if (!anyFailure) {
           const nextCombined = await materializeCombinedSnapshot({
-            rootPath: resolve(root_path),
+            rootPath: resolvedRoot,
           });
           nextId = nextCombined.snapshot_id;
         }

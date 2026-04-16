@@ -77,6 +77,22 @@ Call `get_session_report` at any time to see what the IR has done since the serv
 
 State resets when the server process restarts (i.e. when Cursor restarts or you restart the MCP server manually).
 
+## Snapshot cache
+
+`materialize_snapshot` writes the snapshot to a local cache at `<root_path>/.agent86/snapshots/<snapshot_id>.json`. Pass the `snapshot_id` from the response to `apply_batch` instead of the full snapshot object:
+
+```json
+{
+  "root_path": "/path/to/project",
+  "snapshot_id": "1ecfa9b5...",
+  "ops": [{ "op": "replace_unit", ... }]
+}
+```
+
+This avoids MCP payload size limits on large workspaces. Add `.agent86/` to your project's `.gitignore`.
+
+**Multi-op batches on the same file:** order ops by descending `start_byte` within each file (edit lower positions first). Violating this order produces `unknown_or_superseded_id` on subsequent ops because earlier splices shift byte offsets for units below them in the file.
+
 ## Claude Code
 
 Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the MCP config path your Claude Code build expects), pointing at this package’s `dist/index.js`.
@@ -88,7 +104,7 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 | `materialize_snapshot` | `{ root_path: string, inline_threshold_bytes?: number }` | `WorkspaceSnapshot` (combined `.ts` + `.py` + `.js`/`.mjs`/`.cjs`; includes `grammar_digests` and `skipped_jsx_paths`) |
 | `list_units` | `{ root_path: string, file_path?: string }` | `LogicalUnit[]` |
 | `build_workspace_summary` | `{ root_path: string }` | `WorkspaceSummary` (adds `grammar_digests`; `manifest_url` from ts read path) |
-| `apply_batch` | `{ root_path: string, snapshot: WorkspaceSnapshot, ops: V0Op[], toolchain_fingerprint_at_apply?: AdapterFingerprint }` | `ValidationReport` |
+| `apply_batch` | `{ root_path: string, snapshot?: WorkspaceSnapshot, snapshot_id?: string, ops: V0Op[], toolchain_fingerprint_at_apply?: AdapterFingerprint }` — exactly one of `snapshot` or `snapshot_id` | `ValidationReport` |
 | `get_session_report` | `{}` | Session tally JSON (`ops_submitted`, `batches_*`, `false_positives_prevented`, `rejection_codes`, `warnings_emitted`, unit counts, `session_start_iso`) |
 
 `AdapterFingerprint` is `{ name, semver, grammar_digest, max_batch_ops }`. When `toolchain_fingerprint_at_apply` is omitted, the server audits using the snapshot header adapter.

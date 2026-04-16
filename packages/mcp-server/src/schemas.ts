@@ -27,9 +27,11 @@ const adapterFingerprintSchema = z.object({
   max_batch_ops: z.number().int().positive(),
 });
 
+/** Exactly one of snapshot_id or snapshot is validated in the apply_batch handler (MCP boundary must stay permissive so tool errors are consistent). */
 export const applyBatchInputSchema = z.object({
   root_path: z.string().min(1),
-  snapshot: z.unknown(),
+  snapshot_id: z.string().min(1).optional(),
+  snapshot: z.unknown().optional(),
   ops: z.array(z.unknown()),
   toolchain_fingerprint_at_apply: adapterFingerprintSchema.optional(),
 });

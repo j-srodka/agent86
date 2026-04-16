@@ -639,6 +639,7 @@ These codes are emitted by **`@agent86/mcp-server`** on the **MCP tool boundary*
 | ---- | -------- | ------- |
 | **`lang.agent86.invalid_tool_input`** | error (tool error) | Zod validation failed, **`WorkspaceSnapshot` / `ops` shape guard** failed, or otherwise malformed tool arguments at the MCP layer. **`evidence`** includes Zod **`issues`** or a **`field`** hint. |
 | **`lang.agent86.internal_error`** | error (tool error) | Uncaught exception in a tool handler. **`evidence.stack`** (when available) and **`message`** aid operators; not a spec section 12.1 adapter outcome. |
+| **`lang.agent86.snapshot_cache_miss`** | error (tool error) | **`apply_batch`** was called with **`snapshot_id`** but no file exists at **`<root_path>/.agent86/snapshots/<snapshot_id>.json`** (cache never written, deleted, or wrong root). Message instructs the operator to **re-run materialize_snapshot to rebuild cache** (exact normative phrase in handler text). |
 
 ### Known limitations (this session)
 
@@ -646,6 +647,37 @@ These codes are emitted by **`@agent86/mcp-server`** on the **MCP tool boundary*
 
 - **No authentication, no rate limiting** — local stdio trust model only.
 
+## Snapshot-by-reference cache (MCP server, v2.2)
+
+**Date (normative for this repo):** 2026-04-16
+
+**Problem:** MCP tool arguments cannot reliably round-trip multi-megabyte **`WorkspaceSnapshot`** JSON; agents that only hold **`snapshot_id`** from **`materialize_snapshot`** must not be forced to paste the full snapshot into **`apply_batch`**.
+
+**Cache path (normative):** **`<root_path>/.agent86/snapshots/<snapshot_id>.json`** (UTF-8 JSON file; one file per combined snapshot id).
+
+**Write:** On every **successful** **`materialize_snapshot`** completion, the MCP server writes the combined snapshot JSON to that path (after **`materializeCombinedSnapshot`** succeeds). Failure to write is **non-fatal** for the tool result (logged to stderr; the tool still returns the snapshot payload).
+
+**Read:** **`apply_batch`** accepts either the full **`snapshot`** object (backward compatible) **or** **`snapshot_id`** (string). When **`snapshot_id`** is provided, the server loads the snapshot from the cache file above; **exactly one** of **`snapshot_id`** or **`snapshot`** must be supplied.
+
+**Cache miss:** If the file is missing or not valid JSON, the tool returns an MCP tool error with code **`lang.agent86.snapshot_cache_miss`** (error severity). The **`message`** states that the snapshot was not found in cache and that the operator should **re-run materialize_snapshot to rebuild cache** (and retry **`apply_batch`** with the new id).
+
+**Eviction:** **None in v2.2** — cache files are not deleted automatically; operators may delete **`.agent86/`** manually.
+
+**Repo hygiene:** **`.agent86/`** is listed in the **repository** **`.gitignore`** so local caches are not committed; consumers should add the same ignore rule in application repos that use the MCP server.
+
+## Multi-op batch ordering within a file (normative)
+
+**Date (normative for this repo):** 2026-04-16
+
+**Rule:** When multiple ops in a **single** **`apply_batch`** target logical units in the **same** source file, those ops **MUST** be ordered by **descending `start_byte`** for that file (edit **lower** positions in the file **first** — larger **`start_byte`** earlier in the op list).
+
+**Rationale:** **`replace_unit`** splices bytes in canonical LF source. Each splice shifts byte offsets for units **below** the edited span. Snapshot **`start_byte` / `end_byte`** are **pre-splice** coordinates; applying a higher span first invalidates ids/offsets for lower spans.
+
+**Adapter behavior:** The reference adapters **do not** auto-sort multi-op batches. **Caller’s responsibility** to order ops correctly.
+
+**Failure mode:** If ops are mis-ordered, a later op may hit **`unknown_or_superseded_id`** (or equivalent) on the first op that no longer resolves after an earlier splice — treat ordering violations as caller errors, not adapter bugs.
+
+**MCP tool copy:** The **`apply_batch`** tool description includes a one-sentence reminder to order same-file ops by descending **`start_byte`**.
 
 ## Python adapter (v2)
 
