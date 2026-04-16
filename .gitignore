@@ -144,6 +144,9 @@ vite.config.ts.timestamp-*
 # Claude Code local worktrees (nested checkouts for other efforts; not tracked here)
 .claude/worktrees/
 
+# Agent86 MCP snapshot cache (local; never commit)
+.agent86/
+
 # Agent86 v0: cloned OSS / vendor artifacts
 vendor/
 .cache/repos/
