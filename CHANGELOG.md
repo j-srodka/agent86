@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [2.2.0] — 2026-04-16
+
+- Snapshot-by-reference cache: materialize_snapshot writes snapshot to
+  `<root_path>/.agent86/snapshots/<snapshot_id>.json`; apply_batch now
+  accepts snapshot_id instead of full snapshot object, eliminating MCP
+  payload size limits on large workspaces
+- lang.agent86.snapshot_cache_miss error code when snapshot_id not found
+  in cache
+- Multi-op batch ordering documented: ops on the same file must be
+  ordered by descending start_byte
+- .agent86/ added to .gitignore
+
 ## [2.1.0] — 2026-04-14
 
 - Added packages/js-adapter/ — JavaScript adapter for .js, .mjs, .cjs
