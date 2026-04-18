@@ -9,12 +9,14 @@ import { registerTool as registerApplyBatch } from "./tools/apply.js";
 import { registerTool as registerGetSessionReport } from "./tools/get-session-report.js";
 import { registerTool as registerListUnits } from "./tools/list-units.js";
 import { registerTool as registerMaterializeSnapshot } from "./tools/materialize.js";
+import { registerTool as registerSearchUnits } from "./tools/search-units.js";
 import { registerTool as registerWorkspaceSummary } from "./tools/summary.js";
 
 export function wireAgent86Tools(server: McpServer): void {
   beginMcpServerSession();
   registerMaterializeSnapshot(server);
   registerListUnits(server);
+  registerSearchUnits(server);
   registerWorkspaceSummary(server);
   registerApplyBatch(server);
   registerGetSessionReport(server);

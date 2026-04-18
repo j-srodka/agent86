@@ -11,7 +11,8 @@
  *   Units **at or below** the edit **do not** retain ids (offsets shifted)—conformance
  *   asserts this (Task 8).
  *
- * v0 extracts **function_declaration** and **method_definition** nodes only.
+ * v0 extracts **function_declaration**, **method_definition**, and top-level **class_declaration**
+ * nodes (any **class_declaration** in the tree; see v0-decisions — Tier I scope).
  */
 
 import { createHash } from "node:crypto";
@@ -20,7 +21,7 @@ import type Parser from "tree-sitter";
 import { parseTypeScriptSource } from "./parser.js";
 import type { ExtractedUnitSpan } from "./types.js";
 
-const UNIT_NODE_TYPES = ["function_declaration", "method_definition"] as const;
+const UNIT_NODE_TYPES = ["function_declaration", "method_definition", "class_declaration"] as const;
 type UnitNodeType = (typeof UNIT_NODE_TYPES)[number];
 
 function isUnitNodeType(t: string): t is UnitNodeType {
@@ -89,7 +90,7 @@ export function extractLogicalUnits(
 }
 
 function firstFunctionLikeName(node: Parser.SyntaxNode): string | null {
-  if (node.type === "function_declaration" || node.type === "method_definition") {
+  if (node.type === "function_declaration" || node.type === "method_definition" || node.type === "class_declaration") {
     const n = node.childForFieldName("name");
     if (n) {
       return n.text;

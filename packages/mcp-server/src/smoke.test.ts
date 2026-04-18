@@ -127,6 +127,46 @@ describe("mcp-server smoke", () => {
     });
   });
 
+  it("search_units returns unit_refs for ts function name match", async () => {
+    await withSmokeClient(async (client, root) => {
+      const res = await client.callTool({
+        name: "search_units",
+        arguments: {
+          root_path: root,
+          criteria: { kind: "function", name: "alpha" },
+        },
+      });
+      expect(res.isError).not.toBe(true);
+      const body = firstTextJson(res) as {
+        unit_refs: Array<{ id: string; file_path: string; kind: string }>;
+      };
+      expect(body.unit_refs.some((r) => r.file_path === "src/smoke.ts" && r.kind === "function")).toBe(true);
+      expect(body.unit_refs.every((r) => typeof r.snapshot_id === "string" && r.snapshot_id.length > 0)).toBe(true);
+    });
+  });
+
+  it("search_units with snapshot_id reads cached combined snapshot", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      expect(mat.isError).not.toBe(true);
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const res = await client.callTool({
+        name: "search_units",
+        arguments: {
+          root_path: root,
+          snapshot_id: snap.snapshot_id,
+          criteria: { kind: "function", name: "py_alpha" },
+        },
+      });
+      expect(res.isError).not.toBe(true);
+      const body = firstTextJson(res) as { unit_refs: Array<{ file_path: string }> };
+      expect(body.unit_refs.some((r) => r.file_path === "src/smoke.py")).toBe(true);
+    });
+  });
+
   it("build_workspace_summary includes grammar_digests and manifest_url from ts path", async () => {
     await withSmokeClient(async (client, root) => {
       const res = await client.callTool({

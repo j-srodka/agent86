@@ -957,7 +957,17 @@ Introduce a **typed SDK** (`@agent86/sdk`) so agents program against the **norma
 These shapes are **normative** for **`@agent86/sdk`** and the MCP **`search_units`** tool so implementation tracks can proceed in parallel.
 
 - **`SearchCriteria`:** `{ kind: "function" | "method" | "class" | "reference" | "import"; name?: string; enclosing_class?: string; path_prefix?: string; imported_from?: string; tags?: string[] }` — when multiple fields are set, they are **AND**-composed.
-- **`UnitRef`:** `{ id: string; file_path: string; kind: "function" | "method" | "class" | "reference" | "import"; name?: string; enclosing_class?: string; imported_from?: string; tags?: string[] }` — **no** inlined unit body; large or full payloads stay on the existing read path for **`LogicalUnit`** fetches using the same **`snapshot_id`** (spec §6).
+- **`UnitRef`:** `{ id: string; file_path: string; snapshot_id: string; kind: "function" | "method" | "class" | "reference" | "import"; name?: string; enclosing_class?: string; imported_from?: string; tags?: string[] }` — **`snapshot_id`** is the **`WorkspaceSnapshot.snapshot_id`** the **`id`** was resolved from; **no** inlined unit body; large or full payloads stay on the existing read path for **`LogicalUnit`** fetches using the same **`snapshot_id`** (spec §6).
+
+**Cross-language reference search (v3):** Symbol references that cross **language/adapter** boundaries (e.g. TypeScript importing a Python symbol) are **out of scope**: **`search_units`** partitions units by file extension and runs **per-adapter** `searchUnits` slices only. **`kind: "reference"`** (and related filters) therefore cannot express repo-wide cross-language reference graphs in v3 — agents rely on **same-adapter** results plus explicit **`capability_warnings`** when a filter is unsupported.
+
+### SDK-side snapshot coherence check (v3)
+
+**Problem:** Fluent **`builder()`** queues **`target_id`** strings; without provenance, a caller can accidentally call **`.apply({ snapshot_id })`** against a **different** snapshot than the one used when **`target_id`**s were collected — a **compose-time** bug, not an adapter staleness bug.
+
+**Behavior:** Each **`rename_symbol` / `replace_unit` / `move_unit`** input MAY include **`source_snapshot_id`** (typically copied from **`UnitRef.snapshot_id`** returned by **`search()`**). If **any** op sets **`source_snapshot_id`**, **every** op in the batch must set it, all must be **equal**, and **`.apply({ snapshot_id })`** must equal that value. If **multiple distinct** `source_snapshot_id` values appear across ops, that is a **builder-internal** inconsistency. On any violation, **`@agent86/sdk`** returns a **synthetic `ValidationReport`** locally (**no MCP `apply_batch` round trip**) with **`outcome: "failure"`** and exactly one entry: **`code: "lang.agent86.snapshot_id_mismatch"`**, **`severity: "error"`**, **`evidence: { apply_snapshot_id: string, builder_snapshot_ids: string[], reason: "apply_mismatch" | "builder_multi_snapshot" | "incomplete_source_snapshot_ids" }`**. **`stale_snapshot`** / **`unknown_or_superseded_id`** remain adapter-emitted codes for **runtime** snapshot/id validation after a real apply attempt.
+
+**Spec alignment:** **`lang.agent86.snapshot_id_mismatch`** is tracked in **`docs/impl/spec-proposals.md`** (PROPOSED §12.1 row under **Identity and addressing**) per the repo rule: SDK may emit a **`lang.*`** code before the locked table lists it, but a **proposal entry** must exist.
 
 ### Types — `ValidationReport` and rejection codes
 

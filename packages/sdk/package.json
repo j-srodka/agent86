@@ -1,9 +1,14 @@
 {
-  "name": "conformance",
+  "name": "@agent86/sdk",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
@@ -12,8 +17,6 @@
     "ts-adapter": "workspace:*"
   },
   "devDependencies": {
-    "@agent86/mcp-server": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   }

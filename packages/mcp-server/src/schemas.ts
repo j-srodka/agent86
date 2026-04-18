@@ -35,3 +35,21 @@ export const applyBatchInputSchema = z.object({
   ops: z.array(z.unknown()),
   toolchain_fingerprint_at_apply: adapterFingerprintSchema.optional(),
 });
+
+const searchCriteriaKindSchema = z.enum(["function", "method", "class", "reference", "import"]);
+
+export const searchCriteriaSchema = z.object({
+  kind: searchCriteriaKindSchema,
+  name: z.string().optional(),
+  enclosing_class: z.string().optional(),
+  path_prefix: z.string().optional(),
+  imported_from: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+/** When snapshot_id is omitted, the server materializes a fresh combined snapshot (same as list_units). */
+export const searchUnitsInputSchema = z.object({
+  root_path: z.string().min(1),
+  snapshot_id: z.string().min(1).optional(),
+  criteria: searchCriteriaSchema,
+});

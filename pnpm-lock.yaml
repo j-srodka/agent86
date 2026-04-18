@@ -37,6 +37,12 @@ importers:
         specifier: workspace:*
         version: link:../ts-adapter
     devDependencies:
+      '@agent86/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -93,6 +99,19 @@ importers:
       tree-sitter-python:
         specifier: 0.21.0
         version: 0.21.0(tree-sitter@0.21.1)
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.4(@types/node@22.19.17)
+
+  packages/sdk:
+    dependencies:
+      ts-adapter:
+        specifier: workspace:*
+        version: link:../ts-adapter
     devDependencies:
       typescript:
         specifier: ^5.7.3

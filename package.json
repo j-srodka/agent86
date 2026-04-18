@@ -14,7 +14,7 @@
   "scripts": {
     "build": "pnpm -r run build",
     "build:mcp": "pnpm --filter @agent86/py-adapter run build && pnpm --filter @agent86/js-adapter run build && pnpm --filter @agent86/mcp-server run build",
-    "test": "pnpm --filter ts-adapter run build && pnpm --filter @agent86/py-adapter run build && pnpm --filter @agent86/js-adapter run build && pnpm --filter @agent86/mcp-server run build && pnpm -r run test",
+    "test": "pnpm --filter ts-adapter run build && pnpm --filter @agent86/py-adapter run build && pnpm --filter @agent86/js-adapter run build && pnpm --filter @agent86/mcp-server run build && pnpm --filter @agent86/sdk run build && pnpm -r run test",
     "ab:bench": "pnpm --filter ab-harness start",
     "ab:bench:expanded": "pnpm --filter ab-harness start -- --profile expanded"
   },

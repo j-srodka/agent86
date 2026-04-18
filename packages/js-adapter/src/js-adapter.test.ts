@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { materializeSnapshot, JS_ADAPTER_FINGERPRINT } from "./snapshot.js";
+import { searchUnits } from "./search_units.js";
 import { extractJsLogicalUnits, extractLogicalUnits } from "./units.js";
 import { JS_GRAMMAR_DIGEST, computeJsGrammarDigestFromArtifact } from "./grammar.js";
 import { applyBatch } from "./apply.js";
@@ -82,6 +83,20 @@ it("materializeSnapshot extracts top-level const arrow_function as arrow_functio
     const u = snap.units.find((x) => x.kind === "arrow_function");
     expect(u).toBeDefined();
     expect(u!.source_text).toContain("=>");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it("searchUnits matches top-level arrow_function when kind is function and name matches", async () => {
+  const dir = await makeTempDir();
+  try {
+    await writeJs(dir, "arr.js", "const inc = (x) => x + 1;\n");
+    const snap = await materializeSnapshot({ rootPath: dir });
+    const res = await searchUnits(snap, { kind: "function", name: "inc" }, dir);
+    expect(res.unit_refs).toHaveLength(1);
+    expect(res.unit_refs[0]!.kind).toBe("function");
+    expect(res.unit_refs[0]!.name).toBe("inc");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
