@@ -27,8 +27,8 @@ export interface SearchOptions {
   onWarning?: (warning: SearchWarning) => void;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
 function asString(v: unknown): string | undefined {
@@ -126,7 +126,9 @@ export async function search(criteria: SearchCriteria, opts: SearchOptions): Pro
   }
 
   if (!isRecord(raw)) {
-    throw new Agent86VersionSkewError("search_units returned a non-object body; upgrade the Agent86 MCP server.");
+    throw new TypeError(
+      "search_units response is not an object: the tool returned JSON that is not a plain object (e.g. array or primitive). Expected an object with unit_refs.",
+    );
   }
 
   if ("units" in raw && !("unit_refs" in raw)) {

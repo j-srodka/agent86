@@ -136,6 +136,38 @@ describe("search", () => {
       return e instanceof Agent86TransportError && !(e instanceof Agent86VersionSkewError);
     });
   });
+
+  it("throws TypeError when response body is an empty array (not version-skew)", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return [] as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return (
+        e instanceof TypeError &&
+        /response is not an object/.test(String((e as Error).message)) &&
+        !(e instanceof Agent86VersionSkewError)
+      );
+    });
+  });
+
+  it("throws TypeError when response body is a non-empty array (not version-skew)", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return [{ id: "x" }] as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return (
+        e instanceof TypeError &&
+        /response is not an object/.test(String((e as Error).message)) &&
+        !(e instanceof Agent86VersionSkewError)
+      );
+    });
+  });
 });
 
 describe("normalizeUnitRef", () => {
