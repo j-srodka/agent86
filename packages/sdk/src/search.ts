@@ -21,8 +21,8 @@ export interface SearchOptions {
   /** When set, `search_units` loads the snapshot from `.agent86/snapshots/` (same as `apply_batch`). */
   snapshot_id?: string;
   /**
-   * When the server returns capability warnings (for example unsupported filter combinations), the SDK
-   * may return an empty `unit_refs` list. Those warnings are forwarded here — never swallowed silently.
+   * `search()` may return an empty `UnitRef[]` when no units match the criteria; unsupported filter
+   * combinations produce capability warnings via `onWarning` (if provided) rather than errors.
    */
   onWarning?: (warning: SearchWarning) => void;
 }
