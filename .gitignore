@@ -161,3 +161,5 @@ ab-metrics-expanded.json
 
 # pnpm store
 .pnpm-store/
+.gemini/
+gha-creds-*.json
