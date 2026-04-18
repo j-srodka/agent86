@@ -994,6 +994,8 @@ Recent community work (e.g. **structured AST / edit-operator** research with ben
 
 **Skew vs transport failures:** Version-skew discrimination uses **structured signal** only — JSON-RPC **`error.code === -32601`** (Method not found) or **`error.message`** equal (case-insensitive, whole-string match) to one of a small fixed phrase set — **never** substring matching on concatenated error text. Substring matching misclassifies transient transport failures (**5xx**, auth, timeout) whose messages happen to name the tool.
 
+**Error class evolution is additive, not breaking.** New diagnostic fields on **`Agent86TransportError`** (and any future SDK error classes) are added as **public mutable instance fields**, not as new constructor parameters or options-object discriminators. This preserves the **positional signature** `new Agent86TransportError(message, detail?)` for existing callers and prevents **silent `detail` loss** when raw RPC error objects are passed in the legacy positional form.
+
 ### Explicit non-goals (this session)
 
 - **No `execute_program`**, no **V8 isolate**, no **`isolated-vm`**, no **eval** of agent code in the MCP server.
