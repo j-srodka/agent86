@@ -2,7 +2,7 @@
 
 **Agent86** is a portable, versioned interchange for agent-to-tool and agent-to-agent code editing: **ops**, **snapshots**, **validation reports**, and **rejection codes** agents can branch on deterministically—instead of prose errors they have to parse.
 
-**Status:** v2.1.0 — three language adapters (TypeScript, JavaScript, Python), MCP server with five tools, A/B benchmark harness, and conformance goldens. See [CHANGELOG](CHANGELOG.md) for full history.
+**Status:** v2.2+ — three language adapters (TypeScript, JavaScript, Python), **`@agent86/sdk`** (typed MCP client: fluent builder + `search_units`), MCP server with **six** tools, A/B benchmark harness, and conformance goldens. See [CHANGELOG](CHANGELOG.md) for full history.
 
 ## The problem
 
@@ -34,9 +34,11 @@ A small **Agent86** (intermediate representation): a **locked spec** plus a **re
 | `packages/ts-adapter/` | **TypeScript** adapter: snapshot materialization, `applyBatch`, `WorkspaceSummary`, manifest discovery. |
 | `packages/py-adapter/` | **Python** adapter: same interface as ts-adapter, tree-sitter-python grammar. |
 | `packages/js-adapter/` | **JavaScript** adapter (.js/.mjs/.cjs): same interface, tree-sitter-javascript grammar. |
-| `packages/mcp-server/` | **MCP server**: five tools over stdio — `materialize_snapshot`, `list_units`, `build_workspace_summary`, `apply_batch`, `get_session_report`. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md). |
+| `packages/mcp-server/` | **MCP server**: six tools over stdio — `materialize_snapshot`, `list_units`, **`search_units`**, `build_workspace_summary`, `apply_batch`, `get_session_report`. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md). |
+| `packages/sdk/` | **`@agent86/sdk`**: typed client over MCP (`builder`, `search`, JSON-RPC transport). **Not** a sandbox runtime — agents run the SDK in their own process (Cursor, Claude Code, Node harness). |
 | `packages/conformance/` | Golden fixtures + Vitest runner (determinism, edit-shift ids, cross-file ops). |
 | `packages/ab-harness/` | A/B harness: baseline vs IR-backed tasks across three OSS repos (Zod, Prettier, Ruff). See [`packages/ab-harness/README.md`](packages/ab-harness/README.md). |
+| [`examples/cross-rename-demo/`](examples/cross-rename-demo/README.md) | Small TS demo tree: many cross-file refs to exercise **`lang.ts.cross_file_rename_broad_match`** and narrowing patterns. |
 
 Collaboration rules: [`AGENTS.md`](AGENTS.md). Cursor rules: [`.cursor/rules/agent86.mdc`](.cursor/rules/agent86.mdc).
 
@@ -58,6 +60,7 @@ pnpm --filter conformance test
 ```bash
 pnpm --filter @agent86/py-adapter test
 pnpm --filter @agent86/js-adapter test
+pnpm --filter @agent86/sdk test
 ```
 
 **MCP server (build + smoke tests):**
@@ -100,7 +103,35 @@ The same §9 gates apply to `@agent86/py-adapter` and `@agent86/js-adapter`; eac
 
 ## Using Agent86
 
-**MCP server (recommended):** Add `packages/mcp-server/` to your Cursor or Claude Code MCP config. The server exposes five tools — call `materialize_snapshot` at session start, use `apply_batch` for all `.ts`, `.js`, and `.py` edits, and call `get_session_report` to see IR activity. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md) for the full config block and tool reference.
+**MCP server (recommended):** Add `packages/mcp-server/` to your Cursor or Claude Code MCP config. The server exposes **six** tools — call `materialize_snapshot` at session start, use **`search_units`** for structured unit lookup, use `apply_batch` for all `.ts`, `.js`, and `.py` edits, and call `get_session_report` to see IR activity. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md) for the full config block and tool reference.
+
+### TypeScript SDK (`@agent86/sdk`)
+
+The SDK is a **typed MCP client**: it serializes tool calls and surfaces **`ValidationReport`** — it does **not** execute agent-authored programs (no embedded V8 isolate). Configure transport with an HTTP JSON-RPC endpoint (`AGENT86_MCP_ENDPOINT` or constructor option) that speaks MCP-style `tools/call`.
+
+**Quickstart — always thread `UnitRef.snapshot_id` into `source_snapshot_id` on every op** so the SDK can reject compose-time snapshot skew locally (`lang.agent86.snapshot_id_mismatch`) without a wasteful `apply_batch` round trip:
+
+```typescript
+import { Agent86JsonRpcTransport, builder, search } from "@agent86/sdk";
+
+const transport = new Agent86JsonRpcTransport({ endpoint: process.env.AGENT86_MCP_ENDPOINT });
+
+const snapshot_id = /* from materialize_snapshot */;
+const root_path = /* workspace root */;
+
+const [svc] = await search({ kind: "method", name: "authenticate" }, { transport, root_path, snapshot_id });
+
+const report = await builder(transport)
+  .renameSymbol({
+    target_id: svc.id,
+    source_snapshot_id: svc.snapshot_id,
+    new_name: "verify",
+    cross_file: true,
+  })
+  .apply({ snapshot_id, root_path });
+```
+
+Omitting **`source_snapshot_id`** is allowed for backward compatibility, but then the SDK cannot detect batch-vs-apply snapshot skew at the client.
 
 **Direct API:** Import from the workspace packages:
 
@@ -112,11 +143,15 @@ All three share the same interface: `materializeSnapshot`, `applyBatch`, `buildW
 
 **Spec changes:** propose via `docs/impl/spec-proposals.md`; humans apply edits to the locked spec file.
 
+## Relationship to structured-AST research (e.g. CodeStruct)
+
+Recent research benchmarks often focus on **structured edit operators** or AST-shaped actions over large corpora. That line of work is **complementary**: it helps establish that tree-structured edits are a viable baseline. **Agent86’s emphasis** is different: a **normative rejection-code taxonomy** (`ValidationReport`, spec §12.1) and a **programmable** TypeScript surface so agents **branch on codes** (`batch_size_exceeded`, `lang.ts.cross_file_rename_broad_match`, `lang.agent86.snapshot_id_mismatch`, …) instead of inferring failure from prose. Benchmarks and interchange contracts answer different questions; adopters can use both.
+
 **Roadmap:** `.gitignore`-aware file walking, `.jsx`/`.tsx` support, additional language adapters. Contributions welcome — see [AGENTS.md](AGENTS.md) for collaboration rules.
 
 ## Relationship to LSP and MCP
 
-**LSP** is optimized for human-editor latency and rich IDE features; **MCP** provides transport and capability discovery. This project adds a layer those were not designed to own: a **normative op vocabulary**, **content-addressed snapshots**, and **structured validation reports** aimed at **autonomous agent** edit loops—not at replacing your language server or MCP server.
+**LSP** is optimized for human-editor latency and rich IDE features; **MCP** provides transport and capability discovery. This project adds a layer those were not designed to own: a **normative op vocabulary**, **content-addressed snapshots**, and **structured validation reports** aimed at **autonomous agent** edit loops—not at replacing your language server or MCP server. The **`@agent86/sdk`** package targets **MCP transport only** (not LangChain/Cursor-specific shims); see `docs/impl/v0-decisions.md` — Agent86 SDK (v3).
 
 ## License
 
