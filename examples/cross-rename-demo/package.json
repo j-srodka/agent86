@@ -1,0 +1,10 @@
+{
+  "name": "agent86-cross-rename-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Purpose-built TS layout to exercise cross-file rename_surface_report.found > 10 and narrowing strategies.",
+  "type": "module",
+  "scripts": {
+    "gen": "node ./scripts/generate-consumers.mjs"
+  }
+}
