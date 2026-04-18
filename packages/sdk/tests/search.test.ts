@@ -10,7 +10,7 @@ describe("search", () => {
         calls.push({ name, args });
         if (name !== "search_units") throw new Error("unexpected tool");
         return {
-          units: [
+          unit_refs: [
             {
               id: "u1",
               file_path: "src/a.ts",
@@ -46,8 +46,10 @@ describe("search", () => {
     const transport = {
       async callTool<T>(): Promise<T> {
         return {
-          units: [{ id: "ghost", file_path: "x.ts", kind: "class", name: "C" }],
-          warnings: [{ code: "lang.agent86.unsupported_search_filter", message: "unsupported filter: tags" }],
+          unit_refs: [{ id: "ghost", file_path: "x.ts", kind: "class", name: "C" }],
+          capability_warnings: [
+            { code: "lang.agent86.unsupported_search_filter", message: "unsupported filter: tags" },
+          ],
         } as T;
       },
     };

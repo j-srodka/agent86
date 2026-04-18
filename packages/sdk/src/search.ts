@@ -8,6 +8,10 @@ export interface SearchWarning {
 }
 
 export interface SearchUnitsWireResult {
+  /** Normative MCP `search_units` payload (see v0-decisions). */
+  unit_refs?: unknown;
+  capability_warnings?: SearchWarning[];
+  /** Legacy / test aliases */
   units?: unknown;
   warnings?: SearchWarning[];
 }
@@ -16,6 +20,8 @@ export interface SearchOptions {
   transport: Agent86Transport;
   /** Workspace root passed through to `search_units` (absolute path recommended). */
   root_path: string;
+  /** When set, `search_units` loads the snapshot from `.agent86/snapshots/` (same as `apply_batch`). */
+  snapshot_id?: string;
   /**
    * When the server returns warnings (for example unsupported filter combinations), the SDK
    * may return an empty `units` list. Those warnings are forwarded here — never swallowed silently.
@@ -69,6 +75,12 @@ export function normalizeUnitRef(raw: unknown): UnitRef {
   };
 }
 
+function collectWarnings(payload: SearchUnitsWireResult): SearchWarning[] {
+  const a = payload.capability_warnings ?? [];
+  const b = payload.warnings ?? [];
+  return [...a, ...b];
+}
+
 function hasUnsupportedFilterWarning(warnings: SearchWarning[] | undefined): boolean {
   if (!warnings) return false;
   return warnings.some((w) => {
@@ -88,21 +100,22 @@ function hasUnsupportedFilterWarning(warnings: SearchWarning[] | undefined): boo
 export async function search(criteria: SearchCriteria, opts: SearchOptions): Promise<UnitRef[]> {
   const payload = await opts.transport.callTool<SearchUnitsWireResult>("search_units", {
     root_path: opts.root_path,
+    ...(opts.snapshot_id === undefined ? {} : { snapshot_id: opts.snapshot_id }),
     criteria,
   });
-  const warnings = payload.warnings ?? [];
+  const warnings = collectWarnings(payload);
   for (const w of warnings) {
     opts.onWarning?.(w);
   }
   if (hasUnsupportedFilterWarning(warnings)) {
     return [];
   }
-  const units = payload.units;
+  const units = payload.unit_refs ?? payload.units;
   if (units === undefined) {
     return [];
   }
   if (!Array.isArray(units)) {
-    throw new TypeError("search_units result.units must be an array when present");
+    throw new TypeError("search_units result.unit_refs must be an array when present");
   }
   return units.map((u) => normalizeUnitRef(u));
 }
