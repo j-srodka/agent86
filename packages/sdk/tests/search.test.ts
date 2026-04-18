@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { Agent86TransportError, Agent86VersionSkewError } from "../src/transport.js";
 import { mergeSearchCriteria, normalizeUnitRef, search } from "../src/search.js";
 
 describe("search", () => {
@@ -69,6 +70,42 @@ describe("search", () => {
 
     expect(units).toEqual([]);
     expect(seen.join("|")).toContain("unsupported");
+  });
+
+  it("throws Agent86VersionSkewError for list_units-shaped { units } without unit_refs", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return { units: [{ id: "x", file_path: "a.ts", kind: "function" }] } as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && /list_units-shaped/.test(String(e.message)),
+    );
+  });
+
+  it("throws Agent86VersionSkewError when unit_refs key is missing", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return { capability_warnings: [] } as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && /missing unit_refs/.test(String(e.message)),
+    );
+  });
+
+  it("wraps Agent86TransportError as Agent86VersionSkewError when tool is missing (method not found)", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        throw new Agent86TransportError("Method not found");
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && e instanceof Error && e.cause instanceof Agent86TransportError,
+    );
   });
 });
 

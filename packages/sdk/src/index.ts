@@ -28,12 +28,20 @@ export {
   Agent86JsonRpcTransport,
   Agent86ToolError,
   Agent86TransportError,
+  Agent86VersionSkewError,
   type Agent86Transport,
   type Agent86TransportOptions,
   type CallToolResultWire,
 } from "./transport.js";
 
-export { search, mergeSearchCriteria, normalizeUnitRef, type SearchOptions, type SearchWarning } from "./search.js";
+export {
+  search,
+  mergeSearchCriteria,
+  normalizeUnitRef,
+  type SearchOptions,
+  type SearchUnitsWireResult,
+  type SearchWarning,
+} from "./search.js";
 
 export {
   builder,

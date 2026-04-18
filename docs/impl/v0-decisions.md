@@ -986,6 +986,12 @@ These shapes are **normative** for **`@agent86/sdk`** and the MCP **`search_unit
 
 Recent community work (e.g. **structured AST / edit-operator** research with benchmarks) reinforces that **tree-structured edits** are a crowded baseline. Agent86’s **v3** positioning for this repository is the **normative `ValidationReport` + §12.1 rejection-code contract** and a **typed, branchable SDK surface** — not shipping a separate general-purpose AST framework inside the monorepo in this track. Comparative write-ups for external audiences belong in **marketing / README** revisions, not in the append-only spec file.
 
+### SDK version skew handling (v3)
+
+- **`@agent86/sdk` `search()`** calls the MCP tool **`search_units` only**. There is **no** silent fallback to **`list_units`** or acceptance of **`{ units: LogicalUnit[] }`** wire shapes — those omit **`UnitRef.snapshot_id`** and break **`snapshot_id_mismatch`** coherence.
+- If the host MCP server does not register **`search_units`**, or returns a **`list_units`-shaped** body, the SDK throws **`Agent86VersionSkewError`** with a clear message (typed error; callers may catch and upgrade the server or surface to the user). **No degraded mode** that drops provenance.
+- **Rationale:** Version skew between SDK and server is an explicit failure mode Agent86 is designed to surface, not paper over.
+
 ### Explicit non-goals (this session)
 
 - **No `execute_program`**, no **V8 isolate**, no **`isolated-vm`**, no **eval** of agent code in the MCP server.

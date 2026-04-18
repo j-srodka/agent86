@@ -39,6 +39,18 @@ export class Agent86ToolError extends Error {
   }
 }
 
+/**
+ * Host MCP server is too old or misconfigured: **`@agent86/sdk` v3 requires `search_units`**
+ * and a normative **`{ unit_refs }`** payload (with **`snapshot_id`** on each ref). No silent
+ * downgrade to **`list_units`** or legacy shapes.
+ */
+export class Agent86VersionSkewError extends Error {
+  override readonly name = "Agent86VersionSkewError";
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
 let rpcIdSeq = 1;
 
 function resolveEndpoint(explicit?: string): string {
