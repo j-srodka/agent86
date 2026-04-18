@@ -101,6 +101,19 @@ importers:
         specifier: ^3.0.5
         version: 3.2.4(@types/node@22.19.17)
 
+  packages/sdk:
+    dependencies:
+      ts-adapter:
+        specifier: workspace:*
+        version: link:../ts-adapter
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.4(@types/node@22.19.17)
+
   packages/ts-adapter:
     dependencies:
       tree-sitter:
