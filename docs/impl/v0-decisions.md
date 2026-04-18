@@ -926,6 +926,7 @@ Introduce a **typed SDK** (`@agent86/sdk`) so agents program against the **norma
 - **What the SDK is:** A **pure TypeScript library** that marshals calls to Agent86 **MCP tools** (`materialize_snapshot`, `apply_batch`, `search_units`, etc.). It runs in whatever environment already executes the agent (Cursor, Claude Code, a custom Node harness). **It does not embed a V8 isolate, `isolated-vm`, or any sandbox** that evaluates untrusted agent strings inside this repository.
 - **What the SDK is not:** It is **not** a “code execution mode” host. The design pattern is intentionally the same high-level idea as **SDK-over-tooling** integrations (typed client, explicit I/O): agents import `@agent86/sdk`, construct ops, and receive **`ValidationReport`** outcomes — **without** this repo owning a long-lived sandbox process or running arbitrary agent-authored control flow server-side.
 - **Why no sandbox in v3:** A JS/V8-isolate execution surface adds **security and maintenance surface** (CVE history around isolates and Node native bindings, upgrade churn, host hardening expectations) that we **defer** until there is a product requirement for **server-side** agent program execution. The v3 track ships **contract and ergonomics** first: rejection codes, `ValidationReport` typing, and MCP-backed builders.
+- **`execute_program` scope (forward reference):** If sandboxed execution of agent-authored programs is **revisited**, it is scoped as a **separate `execute_program` MCP tool** (or successor name) with its **own** **`v0-decisions`** entry and operational gates — **not** by retrofitting **`eval()`**, an isolate, or a sandbox **into `@agent86/sdk`**. **`@agent86/sdk` remains a typed client**; execution, if it ever lands, stays **behind MCP** as a distinct tool.
 - **Why MCP as the boundary:** Keeps **one** implementation of snapshot materialization, grammar gates, and apply validation in the adapters. The SDK does not duplicate those semantics; it **serializes requests** and **surfaces errors** from tools. Hosts that already speak MCP can adopt the SDK without a new wire protocol.
 
 ### Package location and publishing
@@ -951,11 +952,19 @@ Introduce a **typed SDK** (`@agent86/sdk`) so agents program against the **norma
 - **Results:** **`UnitRef[]` only** — identifiers and metadata **by reference**, not full **`LogicalUnit`** bodies (spec §6 **“reads by reference”**). Agents fetch bodies through existing read paths when needed.
 - **Unsupported filters:** If an adapter **cannot implement** a filter combination, it returns **`[]`** for its language slice and reports **capability limits** so the result is **not** mistaken for “no matches.” The **MCP layer aggregates** these into explicit **warning entries** (severity **warning**, stable machine-readable **`code`** under the **`lang.agent86.*`** namespace) — **never** a silent empty array with no explanation.
 
+### Wire shapes — `SearchCriteria` and `UnitRef` (Track A / Track B coordination)
+
+These shapes are **normative** for **`@agent86/sdk`** and the MCP **`search_units`** tool so implementation tracks can proceed in parallel.
+
+- **`SearchCriteria`:** `{ kind: "function" | "method" | "class" | "reference" | "import"; name?: string; enclosing_class?: string; path_prefix?: string; imported_from?: string; tags?: string[] }` — when multiple fields are set, they are **AND**-composed.
+- **`UnitRef`:** `{ id: string; file_path: string; kind: "function" | "method" | "class" | "reference" | "import"; name?: string; enclosing_class?: string; imported_from?: string; tags?: string[] }` — **no** inlined unit body; large or full payloads stay on the existing read path for **`LogicalUnit`** fetches using the same **`snapshot_id`** (spec §6).
+
 ### Types — `ValidationReport` and rejection codes
 
 - **`ValidationReport`:** **Re-exported from `ts-adapter`** (`packages/ts-adapter/src/types.ts` + report helpers). The SDK **must not** fork a parallel interface.
 - **`RejectionCode`:** A **TypeScript union** aligned with the **portable normative codes** consumers branch on (see **`SpecNormativeCode`** / spec §12.1 in **`ts-adapter`**). **`lang.*`** subcodes remain **`string`/`template` types** per §12.2.
 - **`REJECTION_CODES`:** A **runtime const object**, grouped by §12.1 **categories** (identity/addressing, structural, policy, language-specific **`lang.*` namespace pointer**), maintained in **`packages/sdk/src/rejection-codes.ts`**. **Single source of truth:** a **hand-maintained seed file** — **do not** parse the locked spec markdown at build time (brittle).
+- **`id_superseded` vs the locked §12.1 table:** **`id_superseded`** is included in **`RejectionCode`** / **`REJECTION_CODES`** as an **implementation-confirmed §12.1 extension** — it is **treated as normative in the codebase and SDK** (see **`SpecNormativeCode`** in **`ts-adapter`**; runtime **`move_unit`** + flattened **`id_resolve`**), even though the **locked** spec’s §12.1 markdown table **predates** its addition. A **separate** follow-up (**not** this log entry) should add a **PROPOSED** block to **`docs/impl/spec-proposals.md`** recommending **`id_superseded`** for formal §12.1 alignment.
 - **Switch-dispatch:** Agents use **`RejectionCode`** for type-checking and **`REJECTION_CODES`** for exhaustive **`switch`** / lookup tables in harnesses.
 
 ### Dependency direction (strict)
@@ -970,5 +979,6 @@ Recent community work (e.g. **structured AST / edit-operator** research with ben
 ### Explicit non-goals (this session)
 
 - **No `execute_program`**, no **V8 isolate**, no **`isolated-vm`**, no **eval** of agent code in the MCP server.
+- **No agent runtime adapters:** **No** Claude Code plugin wrapper, **no** Cursor integration shim, **no** LangChain tool export — those are valid **v4+** tracks but **out of scope** for v3. **`@agent86/sdk` is MCP-transport-only** (constructor/env endpoint → JSON-RPC MCP); higher-level agent-framework bindings live outside this package until explicitly scheduled.
 - **No npm publish** of **`@agent86/sdk`**.
 - **No edits** to the **locked** product spec; amendments go through **`docs/impl/spec-proposals.md`** as elsewhere in this log.
