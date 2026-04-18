@@ -55,7 +55,7 @@ jobs:
         contains(fromJSON('["opened", "reopened"]'), github.event.action)
       ) || (
         github.event.sender.type == 'User' &&
-        startsWith(github.event.comment.body || github.event.review.body || github.event.issue.body, '@gemini-cli') &&
+        startsWith(github.event.comment.body || github.event.review.body || github.event.issue.body || '', '@gemini-cli') &&
         contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association)
       )
     runs-on: 'ubuntu-latest'
@@ -90,7 +90,7 @@ jobs:
         with:
           script: |
             const eventType = process.env.EVENT_TYPE;
-            const request = process.env.REQUEST;
+            const request = process.env.REQUEST || '';
             core.setOutput('request', request);
 
             if (eventType === 'pull_request.opened') {
@@ -117,12 +117,24 @@ jobs:
         if: |-
           startsWith(steps.extract_command.outputs.request, '@gemini-cli')
         env:
+          COMMAND: '${{ steps.extract_command.outputs.command }}'
+          EVENT_TYPE: '${{ github.event_name }}.${{ github.event.action }}'
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
-          MESSAGE: |-
-            🤖 Hi @${{ github.actor }}, I've received your request, and I'm working on it now! You can track my progress [in the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.
           REPOSITORY: '${{ github.repository }}'
         run: |-
+          LOG_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          case "${COMMAND}:${EVENT_TYPE}" in
+            triage:issues.opened|triage:issues.reopened)
+              MESSAGE="🤖 Hi @${{ github.actor }}, I'm running an automatic triage for this issue now. You can track my progress [in the logs](${LOG_URL}) for more details."
+              ;;
+            review:pull_request.opened|review:pull_request.reopened|review:pull_request.synchronize)
+              MESSAGE="🤖 Hi @${{ github.actor }}, I'm running an automatic review for this pull request now. You can track my progress [in the logs](${LOG_URL}) for more details."
+              ;;
+            *)
+              MESSAGE="🤖 Hi @${{ github.actor }}, I've received your request, and I'm working on it now! You can track my progress [in the logs](${LOG_URL}) for more details."
+              ;;
+          esac
           gh issue comment "${ISSUE_NUMBER}" \
             --body "${MESSAGE}" \
             --repo "${REPOSITORY}"

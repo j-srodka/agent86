@@ -27,6 +27,11 @@ You are an issue triage assistant. Analyze the current GitHub issue and identify
 !{echo $ISSUE_BODY}
 ```
 
+**Additional Context** (may be empty — use only if present):
+```
+!{echo $ADDITIONAL_CONTEXT}
+```
+
 **Output File Path**:
 ```
 !{echo $GITHUB_ENV}
@@ -34,7 +39,7 @@ You are an issue triage assistant. Analyze the current GitHub issue and identify
 
 ## Steps
 
-1. Review the issue title, issue body, and available labels provided above.
+1. Review the issue title, issue body, and available labels provided above. If Additional Context is provided, take it into account when selecting labels, but always restrict your choices to the provided allowlist.
 
 2. Based on the issue title and issue body, classify the issue and choose all appropriate labels from the list of available labels.
 

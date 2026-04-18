@@ -3,12 +3,6 @@ name: '📋 Gemini Scheduled Issue Triage'
 on:
   schedule:
     - cron: '0 * * * *' # Runs every hour
-  pull_request:
-    branches:
-      - 'main'
-      - 'release/**/*'
-    paths:
-      - '.github/workflows/gemini-scheduled-triage.yml'
   push:
     branches:
       - 'main'
@@ -27,9 +21,6 @@ defaults:
 
 jobs:
   triage:
-    if: |-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: 'ubuntu-latest'
     timeout-minutes: 7
     permissions:
@@ -127,8 +118,7 @@ jobs:
               "tools": {
                 "core": [
                   "run_shell_command(echo)",
-                  "run_shell_command(jq)",
-                  "run_shell_command(printenv)"
+                  "run_shell_command(jq)"
                 ]
               }
             }
