@@ -14,6 +14,7 @@ export * from "./apply.js";
 export * from "./surface.js";
 export * from "./formatter.js";
 export * from "./ghost_bytes.js";
+export * from "./search_units.js";
 export * from "./ops/replace_unit.js";
 export * from "./ops/rename_symbol.js";
 export * from "./ops/move_unit.js";
