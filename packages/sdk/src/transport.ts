@@ -19,13 +19,40 @@ export interface CallToolResultWire {
   isError?: boolean;
 }
 
+/** Optional fields when the failure maps to JSON-RPC or structured transport diagnostics. */
+export interface Agent86TransportErrorOptions {
+  /** Original JSON-RPC `error` object or other diagnostic payload. */
+  detail?: unknown;
+  /** JSON-RPC `error.code` when present (e.g. `-32601` Method not found). */
+  code?: number;
+  /** Raw JSON-RPC `error.message` when present (distinct from ad‑hoc `message` text in some paths). */
+  rpcMessage?: string;
+}
+
+function isAgent86TransportErrorOptions(arg: unknown): arg is Agent86TransportErrorOptions {
+  return (
+    typeof arg === "object" &&
+    arg !== null &&
+    !Array.isArray(arg) &&
+    ("detail" in arg || "code" in arg || "rpcMessage" in arg)
+  );
+}
+
 export class Agent86TransportError extends Error {
   override readonly name = "Agent86TransportError";
-  constructor(
-    message: string,
-    readonly detail?: unknown,
-  ) {
+  readonly detail?: unknown;
+  readonly code?: number;
+  readonly rpcMessage?: string;
+
+  constructor(message: string, arg?: unknown) {
     super(message);
+    if (isAgent86TransportErrorOptions(arg)) {
+      this.detail = arg.detail;
+      this.code = arg.code;
+      this.rpcMessage = arg.rpcMessage;
+    } else if (arg !== undefined) {
+      this.detail = arg;
+    }
   }
 }
 
@@ -58,9 +85,7 @@ function resolveEndpoint(explicit?: string): string {
   if (fromOpt) return fromOpt;
   const fromEnv = process.env.AGENT86_MCP_ENDPOINT?.trim();
   if (fromEnv) return fromEnv;
-  throw new Agent86TransportError(
-    "Agent86 MCP endpoint is not configured (pass `endpoint` or set AGENT86_MCP_ENDPOINT).",
-  );
+  throw new Agent86TransportError("Agent86 MCP endpoint is not configured (pass `endpoint` or set AGENT86_MCP_ENDPOINT).");
 }
 
 function parseToolPayload<T>(result: CallToolResultWire): T {
@@ -83,12 +108,12 @@ function parseToolPayload<T>(result: CallToolResultWire): T {
   }
   const text = result.content[0]?.text;
   if (text === undefined) {
-    throw new Agent86TransportError("MCP tool result missing text content", result);
+    throw new Agent86TransportError("MCP tool result missing text content", { detail: result });
   }
   try {
     return JSON.parse(text) as T;
   } catch (err) {
-    throw new Agent86TransportError("MCP tool result text is not valid JSON", { text, err });
+    throw new Agent86TransportError("MCP tool result text is not valid JSON", { detail: { text, err } });
   }
 }
 
@@ -122,31 +147,36 @@ export class Agent86JsonRpcTransport {
     });
     const rawText = await res.text();
     if (!res.ok) {
-      throw new Agent86TransportError(`HTTP ${res.status} calling ${name}`, rawText);
+      throw new Agent86TransportError(`HTTP ${res.status} calling ${name}`, { detail: rawText });
     }
     let envelope: unknown;
     try {
       envelope = JSON.parse(rawText) as unknown;
     } catch (err) {
-      throw new Agent86TransportError("JSON-RPC response is not valid JSON", { rawText, err });
+      throw new Agent86TransportError("JSON-RPC response is not valid JSON", { detail: { rawText, err } });
     }
     if (!envelope || typeof envelope !== "object") {
-      throw new Agent86TransportError("JSON-RPC response envelope malformed", envelope);
+      throw new Agent86TransportError("JSON-RPC response envelope malformed", { detail: envelope });
     }
     const e = envelope as Record<string, unknown>;
     if (e.error !== undefined) {
-      throw new Agent86TransportError(
-        typeof e.error === "object" &&
-          e.error !== null &&
-          "message" in e.error &&
-          typeof (e.error as { message: unknown }).message === "string"
-          ? String((e.error as { message: string }).message)
-          : "JSON-RPC error",
-        e.error,
-      );
+      const errObj = e.error;
+      let code: number | undefined;
+      let rpcMessage: string | undefined;
+      if (typeof errObj === "object" && errObj !== null) {
+        const er = errObj as Record<string, unknown>;
+        if (typeof er.code === "number") code = er.code;
+        if (typeof er.message === "string") rpcMessage = er.message;
+      }
+      const message = rpcMessage ?? "JSON-RPC error";
+      throw new Agent86TransportError(message, {
+        detail: e.error,
+        code,
+        rpcMessage,
+      });
     }
     if (e.result === undefined) {
-      throw new Agent86TransportError("JSON-RPC response missing result", envelope);
+      throw new Agent86TransportError("JSON-RPC response missing result", { detail: envelope });
     }
     return parseToolPayload<T>(e.result as CallToolResultWire);
   }

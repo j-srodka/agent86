@@ -30,6 +30,7 @@ export {
   Agent86TransportError,
   Agent86VersionSkewError,
   type Agent86Transport,
+  type Agent86TransportErrorOptions,
   type Agent86TransportOptions,
   type CallToolResultWire,
 } from "./transport.js";

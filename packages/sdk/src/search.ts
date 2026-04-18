@@ -88,6 +88,16 @@ function hasUnsupportedFilterWarning(warnings: SearchWarning[] | undefined): boo
   });
 }
 
+/** Case-insensitive exact phrases on {@link Agent86TransportError.rpcMessage} only (not `message`). */
+const VERSION_SKEW_RPC_MESSAGES = new Set(["method not found", "unknown tool", "tool not found"]);
+
+function isVersionSkewTransportError(err: Agent86TransportError): boolean {
+  if (err.code === -32601) return true;
+  const rpc = err.rpcMessage?.trim().toLowerCase();
+  if (rpc === undefined || rpc === "") return false;
+  return VERSION_SKEW_RPC_MESSAGES.has(rpc);
+}
+
 /**
  * Query logical units via the MCP **`search_units`** tool only (not `list_units`).
  *
@@ -106,18 +116,11 @@ export async function search(criteria: SearchCriteria, opts: SearchOptions): Pro
       criteria,
     });
   } catch (e) {
-    if (e instanceof Agent86TransportError) {
-      const msg = e.message.toLowerCase();
-      if (
-        msg.includes("search_units") ||
-        msg.includes("method not found") ||
-        msg.includes("unknown tool")
-      ) {
-        throw new Agent86VersionSkewError(
-          "MCP server does not expose search_units (or the tool call failed). @agent86/sdk v3 requires the Agent86 MCP server with the search_units tool.",
-          { cause: e },
-        );
-      }
+    if (e instanceof Agent86TransportError && isVersionSkewTransportError(e)) {
+      throw new Agent86VersionSkewError(
+        "MCP server does not expose search_units (or the tool call failed). @agent86/sdk v3 requires the Agent86 MCP server with the search_units tool.",
+        { cause: e },
+      );
     }
     throw e;
   }

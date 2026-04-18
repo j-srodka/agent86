@@ -96,16 +96,52 @@ describe("search", () => {
     );
   });
 
-  it("wraps Agent86TransportError as Agent86VersionSkewError when tool is missing (method not found)", async () => {
+  it("wraps Agent86TransportError as Agent86VersionSkewError when JSON-RPC code is -32601", async () => {
     const transport = {
       async callTool(): Promise<never> {
-        throw new Agent86TransportError("Method not found");
+        throw new Agent86TransportError("JSON-RPC error", { code: -32601 });
       },
     };
 
     await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
       (e: unknown) => e instanceof Agent86VersionSkewError && e instanceof Error && e.cause instanceof Agent86TransportError,
     );
+  });
+
+  it("wraps Agent86TransportError as Agent86VersionSkewError when rpcMessage is an exact-match skew phrase", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        throw new Agent86TransportError("JSON-RPC error", { rpcMessage: "Method not found" });
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && e instanceof Error && e.cause instanceof Agent86TransportError,
+    );
+  });
+
+  it("does not wrap HTTP-style Agent86TransportError that names search_units in the message", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        throw new Agent86TransportError("HTTP 500 calling search_units", { code: -32603 });
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return e instanceof Agent86TransportError && !(e instanceof Agent86VersionSkewError);
+    });
+  });
+
+  it("does not wrap HTTP-style Agent86TransportError without JSON-RPC code", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        throw new Agent86TransportError("HTTP 500 calling search_units");
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return e instanceof Agent86TransportError && !(e instanceof Agent86VersionSkewError);
+    });
   });
 });
 
