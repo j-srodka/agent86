@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { Agent86TransportError, Agent86VersionSkewError } from "../src/transport.js";
 import { mergeSearchCriteria, normalizeUnitRef, search } from "../src/search.js";
 
 describe("search", () => {
@@ -69,6 +70,103 @@ describe("search", () => {
 
     expect(units).toEqual([]);
     expect(seen.join("|")).toContain("unsupported");
+  });
+
+  it("throws Agent86VersionSkewError for list_units-shaped { units } without unit_refs", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return { units: [{ id: "x", file_path: "a.ts", kind: "function" }] } as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && /list_units-shaped/.test(String(e.message)),
+    );
+  });
+
+  it("throws Agent86VersionSkewError when unit_refs key is missing", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return { capability_warnings: [] } as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && /missing unit_refs/.test(String(e.message)),
+    );
+  });
+
+  it("wraps Agent86TransportError as Agent86VersionSkewError when rpcMessage is an exact-match skew phrase", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        const err = new Agent86TransportError("JSON-RPC error");
+        err.rpcMessage = "Method not found";
+        throw err;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy(
+      (e: unknown) => e instanceof Agent86VersionSkewError && e instanceof Error && e.cause instanceof Agent86TransportError,
+    );
+  });
+
+  it("does not wrap HTTP-style Agent86TransportError that names search_units in the message", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        const err = new Agent86TransportError("HTTP 500 calling search_units", "body");
+        err.code = -32603;
+        err.rpcMessage = "Internal error";
+        throw err;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return e instanceof Agent86TransportError && !(e instanceof Agent86VersionSkewError);
+    });
+  });
+
+  it("does not wrap HTTP-style Agent86TransportError without JSON-RPC code", async () => {
+    const transport = {
+      async callTool(): Promise<never> {
+        throw new Agent86TransportError("HTTP 500 calling search_units");
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return e instanceof Agent86TransportError && !(e instanceof Agent86VersionSkewError);
+    });
+  });
+
+  it("throws TypeError when response body is an empty array (not version-skew)", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return [] as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return (
+        e instanceof TypeError &&
+        /response is not an object/.test(String((e as Error).message)) &&
+        !(e instanceof Agent86VersionSkewError)
+      );
+    });
+  });
+
+  it("throws TypeError when response body is a non-empty array (not version-skew)", async () => {
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        return [{ id: "x" }] as T;
+      },
+    };
+
+    await expect(search({ kind: "function" }, { transport, root_path: "/repo" })).rejects.toSatisfy((e: unknown) => {
+      return (
+        e instanceof TypeError &&
+        /response is not an object/.test(String((e as Error).message)) &&
+        !(e instanceof Agent86VersionSkewError)
+      );
+    });
   });
 });
 

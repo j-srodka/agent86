@@ -1,4 +1,5 @@
 import type { Agent86Transport } from "./transport.js";
+import { Agent86TransportError, Agent86VersionSkewError } from "./transport.js";
 import type { SearchCriteria, UnitRef } from "./types.js";
 
 export interface SearchWarning {
@@ -7,13 +8,10 @@ export interface SearchWarning {
   severity?: "error" | "warning" | "info";
 }
 
+/** Normative MCP `search_units` tool result (JSON body). No `list_units` compatibility. */
 export interface SearchUnitsWireResult {
-  /** Normative MCP `search_units` payload (see v0-decisions). */
-  unit_refs?: unknown;
+  unit_refs: unknown[];
   capability_warnings?: SearchWarning[];
-  /** Legacy / test aliases */
-  units?: unknown;
-  warnings?: SearchWarning[];
 }
 
 export interface SearchOptions {
@@ -23,14 +21,14 @@ export interface SearchOptions {
   /** When set, `search_units` loads the snapshot from `.agent86/snapshots/` (same as `apply_batch`). */
   snapshot_id?: string;
   /**
-   * When the server returns warnings (for example unsupported filter combinations), the SDK
-   * may return an empty `units` list. Those warnings are forwarded here — never swallowed silently.
+   * `search()` may return an empty `UnitRef[]` when no units match the criteria; unsupported filter
+   * combinations produce capability warnings via `onWarning` (if provided) rather than errors.
    */
   onWarning?: (warning: SearchWarning) => void;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
 function asString(v: unknown): string | undefined {
@@ -78,9 +76,7 @@ export function normalizeUnitRef(raw: unknown): UnitRef {
 }
 
 function collectWarnings(payload: SearchUnitsWireResult): SearchWarning[] {
-  const a = payload.capability_warnings ?? [];
-  const b = payload.warnings ?? [];
-  return [...a, ...b];
+  return payload.capability_warnings ?? [];
 }
 
 function hasUnsupportedFilterWarning(warnings: SearchWarning[] | undefined): boolean {
@@ -92,19 +88,73 @@ function hasUnsupportedFilterWarning(warnings: SearchWarning[] | undefined): boo
   });
 }
 
+/** Case-insensitive exact phrases on {@link Agent86TransportError.rpcMessage} only (not `message`). */
+const VERSION_SKEW_RPC_MESSAGES = new Set(["method not found", "unknown tool", "tool not found"]);
+
+function isVersionSkewTransportError(err: Agent86TransportError): boolean {
+  if (err.code === -32601) return true;
+  const rpc = err.rpcMessage?.trim().toLowerCase();
+  if (rpc === undefined || rpc === "") return false;
+  return VERSION_SKEW_RPC_MESSAGES.has(rpc);
+}
+
 /**
- * Query logical units via the MCP `search_units` tool.
+ * Query logical units via the MCP **`search_units`** tool only (not `list_units`).
  *
- * **Empty results:** When the transport returns {@link SearchUnitsWireResult.warnings} that
- * indicate an unsupported filter, this function returns `[]` after emitting warnings through
- * `onWarning` (documented empty-on-warning behavior — not a silent failure).
+ * **Version skew:** If the host does not register **`search_units`**, or returns a **`list_units`**
+ * shape (`{ units }` without **`unit_refs`**), this throws {@link Agent86VersionSkewError}.
+ *
+ * **Empty results:** When **`capability_warnings`** indicate an unsupported filter combination,
+ * returns `[]` after **`onWarning`** (documented — not a silent failure).
  */
 export async function search(criteria: SearchCriteria, opts: SearchOptions): Promise<UnitRef[]> {
-  const payload = await opts.transport.callTool<SearchUnitsWireResult>("search_units", {
-    root_path: opts.root_path,
-    ...(opts.snapshot_id === undefined ? {} : { snapshot_id: opts.snapshot_id }),
-    criteria,
-  });
+  let raw: unknown;
+  try {
+    raw = await opts.transport.callTool<unknown>("search_units", {
+      root_path: opts.root_path,
+      ...(opts.snapshot_id === undefined ? {} : { snapshot_id: opts.snapshot_id }),
+      criteria,
+    });
+  } catch (e) {
+    if (e instanceof Agent86TransportError && isVersionSkewTransportError(e)) {
+      throw new Agent86VersionSkewError(
+        "MCP server does not expose search_units (or the tool call failed). @agent86/sdk v3 requires the Agent86 MCP server with the search_units tool.",
+        { cause: e },
+      );
+    }
+    throw e;
+  }
+
+  if (!isRecord(raw)) {
+    throw new TypeError(
+      "search_units response is not an object: the tool returned JSON that is not a plain object (e.g. array or primitive). Expected an object with unit_refs.",
+    );
+  }
+
+  if ("units" in raw && !("unit_refs" in raw)) {
+    throw new Agent86VersionSkewError(
+      "Received a list_units-shaped response { units } without unit_refs. @agent86/sdk v3 requires search_units (UnitRef.snapshot_id provenance).",
+    );
+  }
+
+  if (!("unit_refs" in raw)) {
+    throw new Agent86VersionSkewError(
+      "search_units response missing unit_refs. Upgrade the Agent86 MCP server to a build that implements search_units.",
+    );
+  }
+
+  const unit_refs = raw.unit_refs;
+  if (!Array.isArray(unit_refs)) {
+    throw new TypeError("search_units result.unit_refs must be an array");
+  }
+
+  const payload: SearchUnitsWireResult = {
+    unit_refs,
+    ...(Array.isArray(raw.capability_warnings)
+      ? { capability_warnings: raw.capability_warnings as SearchWarning[] }
+      : {}),
+  };
+
   const warnings = collectWarnings(payload);
   for (const w of warnings) {
     opts.onWarning?.(w);
@@ -112,14 +162,8 @@ export async function search(criteria: SearchCriteria, opts: SearchOptions): Pro
   if (hasUnsupportedFilterWarning(warnings)) {
     return [];
   }
-  const units = payload.unit_refs ?? payload.units;
-  if (units === undefined) {
-    return [];
-  }
-  if (!Array.isArray(units)) {
-    throw new TypeError("search_units result.unit_refs must be an array when present");
-  }
-  return units.map((u) => normalizeUnitRef(u));
+
+  return unit_refs.map((u) => normalizeUnitRef(u));
 }
 
 /**
