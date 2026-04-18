@@ -27,6 +27,9 @@ defaults:
 
 jobs:
   triage:
+    if: |-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: 'ubuntu-latest'
     timeout-minutes: 7
     permissions:
@@ -80,7 +83,9 @@ jobs:
           )"
 
           echo '📝 Setting output for GitHub Actions...'
-          echo "issues_to_triage=${ISSUES}" >> "${GITHUB_OUTPUT}"
+          echo "issues_to_triage<<EOF" >> "${GITHUB_OUTPUT}"
+          echo "${ISSUES}" >> "${GITHUB_OUTPUT}"
+          echo "EOF" >> "${GITHUB_OUTPUT}"
 
           ISSUE_COUNT="$(echo "${ISSUES}" | jq 'length')"
           echo "✅ Found ${ISSUE_COUNT} issue(s) to triage! 🎯"
@@ -171,8 +176,17 @@ jobs:
               .sort()
 
             // Parse out the triaged issues
-            const triagedIssues = (JSON.parse(process.env.TRIAGED_ISSUES || '{}'))
-              .sort((a, b) => a.issue_number - b.issue_number)
+            let triagedIssues = [];
+            try {
+              triagedIssues = JSON.parse(process.env.TRIAGED_ISSUES || '[]');
+              if (!Array.isArray(triagedIssues)) {
+                triagedIssues = [];
+              }
+            } catch (e) {
+              core.warning(`Failed to parse TRIAGED_ISSUES: ${e.message}`);
+              triagedIssues = [];
+            }
+            triagedIssues.sort((a, b) => a.issue_number - b.issue_number)
 
             core.debug(`Triaged issues: ${JSON.stringify(triagedIssues)}`);
 
