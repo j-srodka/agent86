@@ -1,44 +1,99 @@
 # Agent86
 
-**Agent86** is a portable, versioned interchange for agent-to-tool and agent-to-agent code editing: **ops**, **snapshots**, **validation reports**, and **rejection codes** agents can branch on deterministically—instead of prose errors they have to parse.
-
-**Status:** v2.1.0 — three language adapters (TypeScript, JavaScript, Python), MCP server with five tools, A/B benchmark harness, and conformance goldens. See [CHANGELOG](CHANGELOG.md) for full history.
+**Agent86 is the rejection-code contract for AI code editing: structured ops, normative rejection codes agents can branch on, and a typed SDK for programmable refactors.**
 
 ## The problem
 
-Agents editing code today still lean on brittle **line-number** references, get **prose-only** failures from tools, and often **read whole files** when they only need one function. There is **no portable** way to say “apply this validated edit” or “reject with a machine-readable reason” that works the same across editors, CLIs, and custom glue. Every agent–tool pair ends up inventing another **incompatible JSON dialect** for the same handful of operations. That is not a programming-language syntax problem—it is a **missing contract layer** between agents and the software that actually touches the tree.
+Agents still ship **string-match patches**, get **prose-only** errors they cannot branch on, and hit **silent partial failures** when tooling reports success but the wrong nodes changed. The idea that **structured AST-level ops beat raw string edits** is increasingly well explored—notably by recent agent frameworks—but **what is missing** is a **portable contract**: a stable interchange where failures return **normative, machine-readable codes** (not ad hoc messages) so every integration can recover the same way.
 
 ## What this is
 
-A small **Agent86** (intermediate representation): a **locked spec** plus a **reference implementation** defining `WorkspaceSnapshot` (content-addressed, grammar-pinned), `LogicalUnit` (the smallest stable patch target), a minimal **Op** vocabulary for v0 (`replace_unit`, `rename_symbol`, `move_unit` (cross-file)), and `ValidationReport` with **normative rejection codes** agents can branch on deterministically (see the spec’s validation code table). The IR sits **above** host machinery (LSP, Tree-sitter, `tsc`, formatters) and **below** agent reasoning—it is the **contract**, not a replacement for either layer.
+**(a)** A **locked v0 spec** with a normative **§12.1 rejection-code table**—the taxonomy agents are meant to switch on. **(b)** **Reference adapters** for **TypeScript**, **JavaScript**, and **Python** (Tree-sitter–backed snapshot materialization and `applyBatch`). **(c)** A **typed workspace SDK**, **`@agent86/sdk`** (v3), for structured unit search and fluent op batches with optional **snapshot coherence checks** before `apply_batch` hits the wire.
 
-**What it is not:**
+**What it is not:** not a new programming language; **not** a replacement for **LSP** or **MCP** (it complements them—see [`packages/mcp-server/README.md`](packages/mcp-server/README.md)); **not** a promise of production hardening everywhere (the v0 **spec** is locked, but auth, quotas, and trust boundaries are yours).
 
-- **Not** a new general-purpose programming language (optional later surface / skin is out of scope for v0).
-- **Not** a replacement for **LSP** or **MCP** — it **complements** them. Agent86 adds a normative op vocabulary, content-addressed snapshots, and structured ValidationReports that MCP alone does not provide. An Agent86 MCP server ships in `packages/mcp-server/` for direct Cursor and Claude Code integration.
-- **Not** a guarantee of production hardening everywhere: the v0 **spec** is stable and locked, but operational hardening (auth, rate limiting, multi-user trust boundaries) is your responsibility as an adopter.
+## Quickstart
 
-## Normative documents
+Use **`@agent86/sdk`** from this workspace (`private`; not published to npm). The SDK talks to MCP over **JSON-RPC** (`Agent86JsonRpcTransport`); set **`AGENT86_MCP_ENDPOINT`** or pass `endpoint`. **`search()`** requires a host that registers **`search_units`** (v3); otherwise it throws **`Agent86VersionSkewError`**.
 
-| Document | Role |
-| -------- | ---- |
-| [`docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md`](docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md) | **Locked** v0 product spec (agents do not edit in-repo; amendments via `docs/impl/spec-proposals.md` + human apply). |
-| [`docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md`](docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md) | Implementation plan (task order, verification commands). |
-| [`docs/impl/v0-decisions.md`](docs/impl/v0-decisions.md) | Repo-specific behavior: grammar digest, canonical bytes, apply gates, manifest path, etc. |
-| [`docs/writeup/false-positive-problem.md`](docs/writeup/false-positive-problem.md) | Published benchmark writeup — the false positive problem in AI code editing |
+```typescript
+import {
+  Agent86JsonRpcTransport,
+  Agent86Sdk,
+  Agent86VersionSkewError,
+} from "@agent86/sdk";
 
-## Repo layout
+const transport = new Agent86JsonRpcTransport(/* { endpoint } optional */);
+const sdk = new Agent86Sdk({ transport });
 
-| Path | Purpose |
-| ---- | ------- |
-| `packages/ts-adapter/` | **TypeScript** adapter: snapshot materialization, `applyBatch`, `WorkspaceSummary`, manifest discovery. |
-| `packages/py-adapter/` | **Python** adapter: same interface as ts-adapter, tree-sitter-python grammar. |
-| `packages/js-adapter/` | **JavaScript** adapter (.js/.mjs/.cjs): same interface, tree-sitter-javascript grammar. |
-| `packages/mcp-server/` | **MCP server**: five tools over stdio — `materialize_snapshot`, `list_units`, `build_workspace_summary`, `apply_batch`, `get_session_report`. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md). |
-| `packages/conformance/` | Golden fixtures + Vitest runner (determinism, edit-shift ids, cross-file ops). |
-| `packages/ab-harness/` | A/B harness: baseline vs IR-backed tasks across three OSS repos (Zod, Prettier, Ruff). See [`packages/ab-harness/README.md`](packages/ab-harness/README.md). |
+const root_path = "/absolute/path/to/workspace";
+
+// 1. Materialize a snapshot via MCP (tool: materialize_snapshot)
+// — the SDK accepts the resulting snapshot_id.
+const snapshot_id = /* from materialize_snapshot */;
+
+// 2. Find units with structured filters.
+const methods = await sdk.search(
+  { kind: "method", name: "authenticate", enclosing_class: "UserService" },
+  { root_path, snapshot_id },
+);
+
+// 3. Build a batch of ops. Pass source_snapshot_id to enable SDK-side
+//    snapshot coherence checks (recommended; opt-in for backward compat).
+const report = await sdk
+  .builder()
+  .renameSymbol({
+    target_id: methods[0].id,
+    source_snapshot_id: methods[0].snapshot_id, // enables mismatch detection
+    new_name: "verify",
+    cross_file: true,
+  })
+  .apply({ snapshot_id, root_path });
+
+// 4. Branch on rejection codes — the contract Agent86 provides.
+if (report.outcome !== "success") {
+  for (const entry of report.entries) {
+    switch (entry.code) {
+      case "lang.ts.cross_file_rename_broad_match":
+        // Example scenario: narrow matches and retry (see MCP README)—not a benchmarked claim.
+        break;
+      case "lang.agent86.snapshot_id_mismatch":
+        // re-materialize and rebuild
+        break;
+      case "ghost_unit":
+      case "stale_snapshot":
+        // re-materialize snapshot
+        break;
+    }
+  }
+}
+```
+
+## What's included
+
+| Component | Location / role |
+| --------- | ---------------- |
+| **Locked spec** | [`docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md`](docs/superpowers/specs/2026-04-12-agent-ir-and-ai-language-design.md) |
+| **SDK (v3)** | [`packages/sdk/`](packages/sdk/) — `search`, `Agent86Sdk`, batch `builder`, coherence helpers |
+| **Adapters** | [`packages/ts-adapter/`](packages/ts-adapter/), [`packages/js-adapter/`](packages/js-adapter/), [`packages/py-adapter/`](packages/py-adapter/) |
+| **MCP server** | [`packages/mcp-server/`](packages/mcp-server/) — stdio tools (see below) |
+| **Conformance goldens** | [`packages/conformance/`](packages/conformance/) |
+| **A/B harness** | [`packages/ab-harness/`](packages/ab-harness/) — directional benchmark vs string baseline (see writeup) |
+
+Implementation plan: [`docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md`](docs/superpowers/plans/2026-04-12-agent-ir-v0-implementation.md). Decision log: [`docs/impl/v0-decisions.md`](docs/impl/v0-decisions.md). Deeper measurement narrative: [`docs/writeup/false-positive-problem.md`](docs/writeup/false-positive-problem.md).
 
 Collaboration rules: [`AGENTS.md`](AGENTS.md). Cursor rules: [`.cursor/rules/agent86.mdc`](.cursor/rules/agent86.mdc).
+
+## Related work
+
+Related work: AWS AI Labs' [CodeStruct](https://arxiv.org/abs/2604.05407) (arXiv, April 2026) proposes a structured action space for code agents with readCode / editCode primitives over AST entities, benchmarked on SWE-Bench Verified. Agent86 is complementary: where CodeStruct operates as an agent framework, Agent86 is a portable contract — a locked spec with a normative rejection-code taxonomy (§12.1) that any framework, CLI, or custom agent can emit against. The SDK is one reference consumer; other frameworks could be others. The overlap is the "AST ops beat string edits" insight; the distinction is what gets standardized and what layer it lives at.
+
+## Status and roadmap
+
+- **`@agent86/sdk` v3** is in-repo (workspace package); MCP adds **`search_units`** for structured filters used by `sdk.search()`.
+- **Cross-language reference search** (unified queries across ts/js/py graphs) is **planned**; today search is routed per language like the rest of the stack—see `docs/impl/v0-decisions.md`.
+- **A/B benchmark** (expanded harness, three OSS repos): IR false positives **0** on the canonical run is a **structural** observation; **failed-patch-rate** comparisons use **Wilson 95% CIs** that **overlap at n=20**—treat that delta as **directional**, not statistically definitive. Full methodology: [`docs/writeup/false-positive-problem.md`](docs/writeup/false-positive-problem.md).
+- **Roadmap (non-exhaustive):** `.gitignore`-aware walking, `.jsx`/`.tsx` parsing paths, more adapters—see MCP README for current scoping caveats below.
 
 ## Running the stack
 
@@ -88,6 +143,17 @@ Defaults: **`TARGET_REPO_URL`** and **`TARGET_REPO_REV`** resolve to the pinned 
 
 **Expanded multi-repo benchmark** (Zod + Prettier + Ruff, seeded tasks, `ab-metrics-expanded.json`): run **`pnpm ab:bench:expanded`** (or `pnpm --filter ab-harness start -- --profile expanded`). Metrics and `ab-tasks-*.json` are written under **`packages/ab-harness/`** by default (`AB_METRICS_OUT` overrides).
 
+## MCP tools (stdio server, registration order)
+
+| Tool | Purpose |
+| ---- | ------- |
+| `materialize_snapshot` | Build a content-addressed `WorkspaceSnapshot` (cache by `snapshot_id`). |
+| `list_units` | List logical units for a workspace (internal materialization; ids are not interchangeable with other tools’ snapshots—see MCP README). |
+| `search_units` | Structured filter search; normative `{ unit_refs }` payload for SDK v3. |
+| `build_workspace_summary` | Workspace summary / manifest hints for agent planning. |
+| `apply_batch` | Apply validated op batches; returns `ValidationReport` with §12.1 codes. |
+| `get_session_report` | Session tally (ops, batches, rejection codes, warnings). |
+
 ## Apply path and interchange (spec section 9)
 
 For **`applyBatch`**, the reference adapter enforces (in order): on-disk **grammar artifact** matches the checked-in digest (**Gate 1**), **`WorkspaceSnapshot.grammar_digest`** matches the applying adapter (**Gate 2**), **`AdapterFingerprint`** on the snapshot matches **`V0_ADAPTER_FINGERPRINT`** (name, semver, grammar digest, **`max_batch_ops`**), and **`ops.length ≤ max_batch_ops`**.
@@ -98,25 +164,20 @@ For **`applyBatch`**, the reference adapter enforces (in order): on-disk **gramm
 
 The same §9 gates apply to `@agent86/py-adapter` and `@agent86/js-adapter`; each adapter pins its own grammar digest constant (see `docs/impl/v0-decisions.md`).
 
-## Using Agent86
+## Known limitations
 
-**MCP server (recommended):** Add `packages/mcp-server/` to your Cursor or Claude Code MCP config. The server exposes five tools — call `materialize_snapshot` at session start, use `apply_batch` for all `.ts`, `.js`, and `.py` edits, and call `get_session_report` to see IR activity. See [`packages/mcp-server/README.md`](packages/mcp-server/README.md) for the full config block and tool reference.
+Operational caveats (details in [`packages/mcp-server/README.md`](packages/mcp-server/README.md)):
 
-**Direct API:** Import from the workspace packages:
+- **Snapshot scope:** the MCP server walks **all** matching sources under `root_path` and does **not** consult `.gitignore`; broad roots can drag in caches and enlarge cross-file rename matches—use a narrow `root_path` when possible.
+- **Syntax surfaces:** **`.tsx`** is not parsed as TypeScript; **`.jsx`** is not parsed as JavaScript—paths are reported on the snapshot as skipped.
+- **Mixed-language batches:** a single `apply_batch` may apply **ts**, then **py**, then **js**; there is **no cross-language rollback** if a later leg fails after an earlier one wrote disk.
+- **Harness vs live agents:** the A/B harness exercises mechanical baseline vs IR tasks; it does not prove end-to-end behavior for a full autonomous agent loop (see the writeup §6).
 
-- `ts-adapter` — TypeScript and TSX-adjacent workspaces
-- `@agent86/py-adapter` — Python workspaces
-- `@agent86/js-adapter` — JavaScript (.js/.mjs/.cjs) workspaces
+**Spec changes:** propose via [`docs/impl/spec-proposals.md`](docs/impl/spec-proposals.md); humans apply edits to the locked spec file.
 
-All three share the same interface: `materializeSnapshot`, `applyBatch`, `buildWorkspaceSummary`.
+## Contributing
 
-**Spec changes:** propose via `docs/impl/spec-proposals.md`; humans apply edits to the locked spec file.
-
-**Roadmap:** `.gitignore`-aware file walking, `.jsx`/`.tsx` support, additional language adapters. Contributions welcome — see [AGENTS.md](AGENTS.md) for collaboration rules.
-
-## Relationship to LSP and MCP
-
-**LSP** is optimized for human-editor latency and rich IDE features; **MCP** provides transport and capability discovery. This project adds a layer those were not designed to own: a **normative op vocabulary**, **content-addressed snapshots**, and **structured validation reports** aimed at **autonomous agent** edit loops—not at replacing your language server or MCP server.
+See [`AGENTS.md`](AGENTS.md) for collaboration rules and commit conventions. [CHANGELOG](CHANGELOG.md) records release history.
 
 ## License
 
