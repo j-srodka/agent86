@@ -124,3 +124,8 @@ export function phraseForNormativeCode(code: SpecNormativeCode): string {
     }
   }
 }
+
+/** SDK-emitted `lang.agent86.*` contract codes (v0-decisions — snapshot coherence). */
+export const SDK_LANG_AGENT86_CODES = {
+  snapshot_id_mismatch: "lang.agent86.snapshot_id_mismatch",
+} as const;

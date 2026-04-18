@@ -103,9 +103,10 @@ function toPosix(p: string): string {
   return p.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-function logicalKindForTsUnit(unit: LogicalUnit): "function" | "method" | null {
+function logicalKindForTsUnit(unit: LogicalUnit): "function" | "method" | "class" | null {
   if (unit.kind === "function_declaration") return "function";
   if (unit.kind === "method_definition") return "method";
+  if (unit.kind === "class_declaration") return "class";
   return null;
 }
 
@@ -148,15 +149,6 @@ export async function searchUnits(
     return { unit_refs: [], capability_warnings };
   }
 
-  if (criteria.kind === "class") {
-    warn(
-      capability_warnings,
-      "lang.agent86.search_kind_class_unavailable_ts",
-      "ts-adapter v1 Tier I snapshots do not include class_declaration units; class search returns no ts matches.",
-    );
-    return { unit_refs: [], capability_warnings };
-  }
-
   const pathPrefix = criteria.path_prefix !== undefined && criteria.path_prefix !== "" ? toPosix(criteria.path_prefix) : null;
 
   if (criteria.enclosing_class !== undefined && snapshotRootPath === undefined) {
@@ -191,8 +183,11 @@ export async function searchUnits(
 
     const logical = logicalKindForTsUnit(unit);
     if (logical === null) continue;
-    if (criteria.kind === "function" && logical !== "function") continue;
-    if (criteria.kind === "method" && logical !== "method") continue;
+    if (criteria.kind !== logical) continue;
+
+    if (logical === "class" && criteria.enclosing_class !== undefined) {
+      continue;
+    }
 
     const text = await unitText(unit, snapshotRootPath);
     if (text === null) {
@@ -204,6 +199,16 @@ export async function searchUnits(
 
     const declName = declaredNameFromUnitSource(text);
     if (criteria.name !== undefined && criteria.name !== declName) continue;
+
+    if (logical === "class") {
+      unit_refs.push({
+        id: unit.id,
+        file_path: unit.file_path,
+        kind: "class",
+        ...(declName !== null ? { name: declName } : {}),
+      });
+      continue;
+    }
 
     let enclosing: string | undefined;
     if (logical === "method" && snapshotRootPath) {

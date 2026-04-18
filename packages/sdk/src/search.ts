@@ -57,9 +57,10 @@ export function normalizeUnitRef(raw: unknown): UnitRef {
   }
   const id = asString(raw.id);
   const file_path = asString(raw.file_path);
+  const snapshot_id = asString(raw.snapshot_id);
   const kind = asString(raw.kind);
-  if (!id || !file_path || !kind) {
-    throw new TypeError("search_units unit entry missing id, file_path, or kind");
+  if (!id || !file_path || !snapshot_id || !kind) {
+    throw new TypeError("search_units unit entry missing id, file_path, snapshot_id, or kind");
   }
   if (kind !== "function" && kind !== "method" && kind !== "class" && kind !== "reference" && kind !== "import") {
     throw new TypeError(`search_units unit entry has unsupported kind: ${kind}`);
@@ -67,6 +68,7 @@ export function normalizeUnitRef(raw: unknown): UnitRef {
   return {
     id,
     file_path,
+    snapshot_id,
     kind,
     name: asString(raw.name),
     enclosing_class: asString(raw.enclosing_class),

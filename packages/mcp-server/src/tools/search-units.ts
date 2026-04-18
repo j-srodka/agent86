@@ -26,6 +26,7 @@ export interface SearchUnitsWirePayload {
   unit_refs: Array<{
     id: string;
     file_path: string;
+    snapshot_id: string;
     kind: string;
     name?: string;
     enclosing_class?: string;
@@ -84,7 +85,10 @@ export function registerTool(server: McpServer): void {
           jsSearchUnits(jsSubset, criteria, resolvedRoot),
         ]);
 
-        const unit_refs = [...tsR.unit_refs, ...pyR.unit_refs, ...jsR.unit_refs];
+        const unit_refs = [...tsR.unit_refs, ...pyR.unit_refs, ...jsR.unit_refs].map((u) => ({
+          ...u,
+          snapshot_id: combined.snapshot_id,
+        }));
         const capability_warnings = mergeWarnings(
           mergeWarnings(tsR.capability_warnings, pyR.capability_warnings),
           jsR.capability_warnings,

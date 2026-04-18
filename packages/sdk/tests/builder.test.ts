@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AdapterFingerprint, ValidationReport } from "ts-adapter";
 
 import { builder } from "../src/builder.js";
-import { phraseForNormativeCode } from "../src/rejection-codes.js";
+import { phraseForNormativeCode, SDK_LANG_AGENT86_CODES } from "../src/rejection-codes.js";
 
 function stubReport(): ValidationReport {
   return {
@@ -50,6 +50,70 @@ describe("OpBatchBuilder", () => {
       target_id: "c",
       destination_file: "dst.ts",
       insert_after_id: "z",
+    });
+  });
+
+  it("returns synthetic ValidationReport when apply snapshot_id mismatches source_snapshot_id (no MCP call)", async () => {
+    let calls = 0;
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        calls++;
+        return stubReport() as T;
+      },
+    };
+
+    const report = await builder(transport)
+      .replaceUnit({ target_id: "u1", new_body: "x", source_snapshot_id: "snap-a" })
+      .apply({ snapshot_id: "snap-b", root_path: "/tmp/root" });
+
+    expect(calls).toBe(0);
+    expect(report.outcome).toBe("failure");
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0]!.code).toBe(SDK_LANG_AGENT86_CODES.snapshot_id_mismatch);
+    expect(report.entries[0]!.evidence).toMatchObject({
+      apply_snapshot_id: "snap-b",
+      builder_snapshot_ids: ["snap-a"],
+      reason: "apply_mismatch",
+    });
+  });
+
+  it("rejects when only some ops set source_snapshot_id", async () => {
+    let calls = 0;
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        calls++;
+        return stubReport() as T;
+      },
+    };
+
+    const report = await builder(transport)
+      .replaceUnit({ target_id: "u1", new_body: "a", source_snapshot_id: "snap-x" })
+      .replaceUnit({ target_id: "u2", new_body: "b" })
+      .apply({ snapshot_id: "snap-x", root_path: "/tmp/root" });
+
+    expect(calls).toBe(0);
+    expect(report.entries[0]!.code).toBe(SDK_LANG_AGENT86_CODES.snapshot_id_mismatch);
+    expect(report.entries[0]!.evidence).toMatchObject({ reason: "incomplete_source_snapshot_ids" });
+  });
+
+  it("rejects when ops mix two different source_snapshot_id values", async () => {
+    let calls = 0;
+    const transport = {
+      async callTool<T>(): Promise<T> {
+        calls++;
+        return stubReport() as T;
+      },
+    };
+
+    const report = await builder(transport)
+      .replaceUnit({ target_id: "u1", new_body: "a", source_snapshot_id: "snap-a" })
+      .replaceUnit({ target_id: "u2", new_body: "b", source_snapshot_id: "snap-b" })
+      .apply({ snapshot_id: "snap-a", root_path: "/tmp/root" });
+
+    expect(calls).toBe(0);
+    expect(report.entries[0]!.evidence).toMatchObject({
+      reason: "builder_multi_snapshot",
+      builder_snapshot_ids: expect.arrayContaining(["snap-a", "snap-b"]),
     });
   });
 

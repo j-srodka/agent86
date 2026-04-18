@@ -14,6 +14,7 @@ describe("search", () => {
             {
               id: "u1",
               file_path: "src/a.ts",
+              snapshot_id: "snap-1",
               kind: "function",
               name: "foo",
             },
@@ -46,7 +47,7 @@ describe("search", () => {
     const transport = {
       async callTool<T>(): Promise<T> {
         return {
-          unit_refs: [{ id: "ghost", file_path: "x.ts", kind: "class", name: "C" }],
+          unit_refs: [{ id: "ghost", file_path: "x.ts", snapshot_id: "snap-x", kind: "class", name: "C" }],
           capability_warnings: [
             { code: "lang.agent86.unsupported_search_filter", message: "unsupported filter: tags" },
           ],
@@ -77,6 +78,7 @@ describe("normalizeUnitRef", () => {
       normalizeUnitRef({
         id: "1",
         file_path: "f.ts",
+        snapshot_id: "s",
         kind: "import",
         imported_from: "./x",
       }),
@@ -88,6 +90,7 @@ describe("normalizeUnitRef", () => {
       normalizeUnitRef({
         id: "1",
         file_path: "f.ts",
+        snapshot_id: "s",
         kind: "function_declaration",
       }),
     ).toThrow(/unsupported kind/);

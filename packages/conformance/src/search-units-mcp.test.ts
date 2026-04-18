@@ -59,9 +59,11 @@ describe("search_units MCP golden", () => {
         },
       });
       expect(search.isError).not.toBe(true);
-      const body = firstTextJson(search) as { unit_refs: Array<{ id: string }> };
+      const body = firstTextJson(search) as { unit_refs: Array<{ id: string; snapshot_id: string }> };
       expect(body.unit_refs.length).toBeGreaterThanOrEqual(1);
-      expect(body.unit_refs.some((r) => r.id === expected!.id)).toBe(true);
+      const hit = body.unit_refs.find((r) => r.id === expected!.id);
+      expect(hit).toBeTruthy();
+      expect(hit!.snapshot_id).toBe(snap.snapshot_id);
     } finally {
       await client.close();
       await server.close();

@@ -33,6 +33,8 @@ export interface SearchCriteria {
 export interface UnitRef {
   id: string;
   file_path: string;
+  /** Snapshot the `id` was resolved from (`search_units` / MCP sets this). */
+  snapshot_id: string;
   kind: SearchUnitKind;
   name?: string;
   enclosing_class?: string;

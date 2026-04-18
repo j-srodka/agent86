@@ -17,7 +17,12 @@ export type {
   SpecNormativeCode,
 } from "./types.js";
 
-export { REJECTION_CODES, phraseForNormativeCode, type RejectionPhraseCategory } from "./rejection-codes.js";
+export {
+  REJECTION_CODES,
+  SDK_LANG_AGENT86_CODES,
+  phraseForNormativeCode,
+  type RejectionPhraseCategory,
+} from "./rejection-codes.js";
 
 export {
   Agent86JsonRpcTransport,
@@ -38,5 +43,11 @@ export {
   type RenameSymbolInput,
   type ReplaceUnitInput,
 } from "./builder.js";
+
+export {
+  buildSnapshotIdMismatchReport,
+  SDK_COHERENCE_ADAPTER,
+  type SnapshotIdMismatchReason,
+} from "./snapshot-coherence.js";
 
 export { Agent86Sdk, type Agent86SdkOptions } from "./agent86-sdk.js";

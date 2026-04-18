@@ -141,6 +141,7 @@ describe("mcp-server smoke", () => {
         unit_refs: Array<{ id: string; file_path: string; kind: string }>;
       };
       expect(body.unit_refs.some((r) => r.file_path === "src/smoke.ts" && r.kind === "function")).toBe(true);
+      expect(body.unit_refs.every((r) => typeof r.snapshot_id === "string" && r.snapshot_id.length > 0)).toBe(true);
     });
   });
 

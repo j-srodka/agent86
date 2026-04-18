@@ -89,6 +89,15 @@ function logicalKindForJsUnit(
   return null;
 }
 
+/** Arrow units store a `variable_declarator` slice that may omit `const`; recover the binding id. */
+function declaredJsBindingName(unit: LogicalUnit, text: string): string | null {
+  if (unit.kind === "arrow_function") {
+    const m = /^([A-Za-z_$][\w$]*)\s*=/.exec(text.trimStart());
+    if (m) return m[1]!;
+  }
+  return declaredNameFromUnitSource(text);
+}
+
 /**
  * Search Tier I units in a js-adapter `WorkspaceSnapshot` slice (`.js`/`.mjs`/`.cjs` only).
  */
@@ -157,7 +166,7 @@ export async function searchUnits(
       continue;
     }
 
-    const declName = declaredNameFromUnitSource(text);
+    const declName = declaredJsBindingName(unit, text);
     if (criteria.name !== undefined && criteria.name !== declName) continue;
 
     let enclosing: string | undefined;
