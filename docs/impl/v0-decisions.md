@@ -910,3 +910,65 @@ Unit ids are SHA-256 over a pipe-delimited preimage that includes **`grammarDige
 - **No persistence rationale:** The server uses **stdio**; typical hosts (e.g. Cursor) spawn **one process per editor session**. Process exit is the natural reset boundary; persisting tallies would not reflect “session” semantics and would add sync and privacy concerns without a stated product requirement.
 
 - **Wire schema:** Tool name **`get_session_report`**. Arguments are the **empty object `{}`** on the MCP tool boundary (**snake_case** field names on other tools remain unchanged). The tool result is **JSON text** mirroring the in-memory **`SessionState`** object (same snake_case keys as the wire tally), including **`js_units_seen`** (count of logical units whose **`file_path`** ends with **`.js`**, **`.mjs`**, or **`.cjs`** after each **`materialize_snapshot`**).
+
+---
+
+## Agent86 SDK (v3)
+
+**Date (normative for this repo):** 2026-04-18
+
+### Purpose
+
+Introduce a **typed SDK** (`@agent86/sdk`) so agents program against the **normative rejection-code taxonomy** (spec §12.1) and the existing **MCP tool surface** using fluent builders and structured search — without adding an in-repo execution sandbox or a second source of truth for `ValidationReport`.
+
+### Architecture — typed client over MCP (no sandbox runtime)
+
+- **What the SDK is:** A **pure TypeScript library** that marshals calls to Agent86 **MCP tools** (`materialize_snapshot`, `apply_batch`, `search_units`, etc.). It runs in whatever environment already executes the agent (Cursor, Claude Code, a custom Node harness). **It does not embed a V8 isolate, `isolated-vm`, or any sandbox** that evaluates untrusted agent strings inside this repository.
+- **What the SDK is not:** It is **not** a “code execution mode” host. The design pattern is intentionally the same high-level idea as **SDK-over-tooling** integrations (typed client, explicit I/O): agents import `@agent86/sdk`, construct ops, and receive **`ValidationReport`** outcomes — **without** this repo owning a long-lived sandbox process or running arbitrary agent-authored control flow server-side.
+- **Why no sandbox in v3:** A JS/V8-isolate execution surface adds **security and maintenance surface** (CVE history around isolates and Node native bindings, upgrade churn, host hardening expectations) that we **defer** until there is a product requirement for **server-side** agent program execution. The v3 track ships **contract and ergonomics** first: rejection codes, `ValidationReport` typing, and MCP-backed builders.
+- **Why MCP as the boundary:** Keeps **one** implementation of snapshot materialization, grammar gates, and apply validation in the adapters. The SDK does not duplicate those semantics; it **serializes requests** and **surfaces errors** from tools. Hosts that already speak MCP can adopt the SDK without a new wire protocol.
+
+### Package location and publishing
+
+- **Path:** `packages/sdk/`
+- **Package name:** `@agent86/sdk` (pnpm workspace `workspace:*` dependency on **`ts-adapter`** for wire types)
+- **Publishing:** **Workspace-only in this session.** A future **`npm publish`** is a deliberate, separate release step (versioning, provenance, docs). Do not treat the absence of publish automation as permission to duplicate types into ad-hoc packages.
+
+### Builder API (fluent, in-memory; `apply_batch` wire)
+
+- **Entry:** `builder()` returns a chainable object with:
+  - **`.rename_symbol({ unit_id, new_name, cross_file? })`**
+  - **`.replace_unit({ unit_id, new_body })`** — maps to the existing **`replace_unit`** op’s `new_text` field on the wire (parameter name **`new_body`** is SDK sugar)
+  - **`.move_unit({ unit_id, destination_file, insert_after_id? })`** — maps directly to the existing **`move_unit`** op (cross-file move only; same-file reorder remains out of scope per adapter rules)
+  - **`.apply({ snapshot_id, root_path, ... })` → `Promise<ValidationReport>`** — marshals the collected op array to the **`apply_batch`** MCP tool with **`snapshot_id`** (not the full snapshot object) and the caller’s **`root_path`**
+- **Ordering:** The SDK **does not re-sort** ops. **Multi-op ordering within a file** remains the **adapter’s** responsibility (see **v2.2 multi-op ordering** / `apply_batch` documentation). Callers preserve input order.
+- **Scope:** **No changes** to rename/move/replace **semantics** in adapters for this track — the SDK is a **thin, typed wrapper** over existing ops.
+
+### `search_units` — structured unit search (read path, §6)
+
+- **MCP tool:** **`search_units`** is added as a **sixth** tool on the reference MCP server. It **materializes or loads** the same **`WorkspaceSnapshot`** shape as other tools, then **dispatches** to **`searchUnits(criteria)`** on **ts-, py-, and js-adapters** via the existing **extension → language** routing. Each adapter performs a **v1 linear scan** over **materialized `units[]`** (optimize later).
+- **Criteria (MVP, AND-composed):** `kind` (**`function` \| `method` \| `class` \| `reference` \| `import`**), optional **`name`**, **`enclosing_class`**, **`path_prefix`**, **`imported_from`** (for **`kind: "reference"`**), **`tags`**. All predicates are **AND**ed.
+- **Results:** **`UnitRef[]` only** — identifiers and metadata **by reference**, not full **`LogicalUnit`** bodies (spec §6 **“reads by reference”**). Agents fetch bodies through existing read paths when needed.
+- **Unsupported filters:** If an adapter **cannot implement** a filter combination, it returns **`[]`** for its language slice and reports **capability limits** so the result is **not** mistaken for “no matches.” The **MCP layer aggregates** these into explicit **warning entries** (severity **warning**, stable machine-readable **`code`** under the **`lang.agent86.*`** namespace) — **never** a silent empty array with no explanation.
+
+### Types — `ValidationReport` and rejection codes
+
+- **`ValidationReport`:** **Re-exported from `ts-adapter`** (`packages/ts-adapter/src/types.ts` + report helpers). The SDK **must not** fork a parallel interface.
+- **`RejectionCode`:** A **TypeScript union** aligned with the **portable normative codes** consumers branch on (see **`SpecNormativeCode`** / spec §12.1 in **`ts-adapter`**). **`lang.*`** subcodes remain **`string`/`template` types** per §12.2.
+- **`REJECTION_CODES`:** A **runtime const object**, grouped by §12.1 **categories** (identity/addressing, structural, policy, language-specific **`lang.*` namespace pointer**), maintained in **`packages/sdk/src/rejection-codes.ts`**. **Single source of truth:** a **hand-maintained seed file** — **do not** parse the locked spec markdown at build time (brittle).
+- **Switch-dispatch:** Agents use **`RejectionCode`** for type-checking and **`REJECTION_CODES`** for exhaustive **`switch`** / lookup tables in harnesses.
+
+### Dependency direction (strict)
+
+- **`@agent86/sdk` → `ts-adapter` (types)** for wire shapes and `ValidationReport`.
+- **Adapters and MCP server do not depend on `@agent86/sdk`.** One-way edge only.
+
+### Positioning note (contract vs “AST framework” papers)
+
+Recent community work (e.g. **structured AST / edit-operator** research with benchmarks) reinforces that **tree-structured edits** are a crowded baseline. Agent86’s **v3** positioning for this repository is the **normative `ValidationReport` + §12.1 rejection-code contract** and a **typed, branchable SDK surface** — not shipping a separate general-purpose AST framework inside the monorepo in this track. Comparative write-ups for external audiences belong in **marketing / README** revisions, not in the append-only spec file.
+
+### Explicit non-goals (this session)
+
+- **No `execute_program`**, no **V8 isolate**, no **`isolated-vm`**, no **eval** of agent code in the MCP server.
+- **No npm publish** of **`@agent86/sdk`**.
+- **No edits** to the **locked** product spec; amendments go through **`docs/impl/spec-proposals.md`** as elsewhere in this log.
