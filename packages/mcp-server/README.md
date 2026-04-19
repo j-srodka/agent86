@@ -103,6 +103,7 @@ Add the same `command` / `args` / `type` block under `.claude/mcp.json` (or the 
 | ---- | ----- | ------ |
 | `materialize_snapshot` | `{ root_path: string, inline_threshold_bytes?: number }` | `WorkspaceSnapshot` (combined `.ts` + `.py` + `.js`/`.mjs`/`.cjs`; includes `grammar_digests` and `skipped_jsx_paths`) |
 | `list_units` | `{ root_path: string, file_path?: string }` | `LogicalUnit[]` |
+| `search_units` | `{ root_path: string, snapshot_id?: string, criteria }` — `criteria.kind` is `function` \| `method` \| `class` \| `reference` \| `import`; optional `name`, `enclosing_class`, `path_prefix`, `imported_from`, `tags`. With `snapshot_id`, reads the `.agent86/snapshots/` cache from `materialize_snapshot`; without it, materializes from disk. | `{ unit_refs: [...], capability_warnings?: … }` — each entry includes `id`, `file_path`, `snapshot_id`, `kind`, and optional metadata; this is the wire shape consumed by `@agent86/sdk` **`search()`**. |
 | `build_workspace_summary` | `{ root_path: string }` | `WorkspaceSummary` (adds `grammar_digests`; `manifest_url` from ts read path) |
 | `apply_batch` | `{ root_path: string, snapshot?: WorkspaceSnapshot, snapshot_id?: string, ops: V0Op[], toolchain_fingerprint_at_apply?: AdapterFingerprint }` — exactly one of `snapshot` or `snapshot_id` | `ValidationReport` |
 | `get_session_report` | `{}` | Session tally JSON (`ops_submitted`, `batches_*`, `false_positives_prevented`, `rejection_codes`, `warnings_emitted`, unit counts, `session_start_iso`) |

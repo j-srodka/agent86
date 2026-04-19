@@ -14,7 +14,7 @@ Agents still ship **string-match patches**, get **prose-only** errors they canno
 
 ## Quickstart
 
-Use **`@agent86/sdk`** from this workspace (`private`; not published to npm). The SDK talks to MCP over **JSON-RPC** (`Agent86JsonRpcTransport`); set **`AGENT86_MCP_ENDPOINT`** or pass `endpoint`. **`search()`** requires a host that registers **`search_units`** (v3); otherwise it throws **`Agent86VersionSkewError`**.
+Use **`@agent86/sdk`** from this workspace (`private`; not published to npm). **`Agent86JsonRpcTransport`** posts **JSON-RPC** `tools/call` to an **HTTP** endpoint—set **`AGENT86_MCP_ENDPOINT`** or pass `endpoint` to whatever **MCP gateway** your environment exposes (the wire shape is documented on `Agent86JsonRpcTransport` in `packages/sdk`). That is **not** the same as the reference **`@agent86/mcp-server`** process, which speaks **MCP over stdio** (`node packages/mcp-server/dist/index.js`). To use the SDK against this repo’s server you need a **stdio-to-HTTP bridge** from your host, or skip the transport and invoke MCP tools / **`ts-adapter`** directly in-process. **`search()`** requires a host that registers **`search_units`** (v3); otherwise it throws **`Agent86VersionSkewError`**.
 
 ```typescript
 import {
