@@ -24,4 +24,23 @@ describe("searchUnits (ts-adapter)", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("matches method_definition for kind method + name authenticate", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ts-search-method-auth-"));
+    try {
+      await writeFile(
+        join(dir, "user.ts"),
+        ["class UserService {", "  authenticate() {}", "}", ""].join("\n"),
+        "utf8",
+      );
+      const snap = await materializeSnapshot({ rootPath: dir });
+      const res = await searchUnits(snap, { kind: "method", name: "authenticate" }, dir);
+      expect(res.unit_refs).toHaveLength(1);
+      expect(res.unit_refs[0]!.kind).toBe("method");
+      expect(res.unit_refs[0]!.name).toBe("authenticate");
+      expect(res.unit_refs[0]!.enclosing_class).toBe("UserService");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
