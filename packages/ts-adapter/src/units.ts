@@ -89,8 +89,38 @@ export function extractLogicalUnits(
   });
 }
 
+/**
+ * Tree-sitter `method_definition` names live on `property_identifier` /
+ * `shorthand_property_identifier` (not always exposed via childForFieldName("name")).
+ */
+function methodDefinitionDeclaredName(node: Parser.SyntaxNode): string | null {
+  if (node.type !== "method_definition") return null;
+  const byField = node.childForFieldName("name");
+  if (
+    byField &&
+    (byField.type === "property_identifier" ||
+      byField.type === "shorthand_property_identifier" ||
+      byField.type === "identifier")
+  ) {
+    return byField.text;
+  }
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const c = node.namedChild(i);
+    if (!c) continue;
+    if (c.type === "property_identifier" || c.type === "shorthand_property_identifier") {
+      return c.text;
+    }
+  }
+  return null;
+}
+
 function firstFunctionLikeName(node: Parser.SyntaxNode): string | null {
-  if (node.type === "function_declaration" || node.type === "method_definition" || node.type === "class_declaration") {
+  if (node.type === "method_definition") {
+    const direct = methodDefinitionDeclaredName(node);
+    if (direct !== null) return direct;
+    return null;
+  }
+  if (node.type === "function_declaration" || node.type === "class_declaration") {
     const n = node.childForFieldName("name");
     if (n) {
       return n.text;
@@ -112,4 +142,20 @@ function firstFunctionLikeName(node: Parser.SyntaxNode): string | null {
 export function declaredNameFromUnitSource(source: string): string | null {
   const tree = parseTypeScriptSource(source);
   return firstFunctionLikeName(tree.rootNode);
+}
+
+/**
+ * Declared name for a Tier I tree-sitter node (`function_declaration`, `method_definition`,
+ * `class_declaration`). Prefer this when the node comes from a **full-file** parse; isolated
+ * method spans do not re-parse as `method_definition`.
+ */
+export function declaredNameFromTierOneNode(node: Parser.SyntaxNode): string | null {
+  if (node.type === "method_definition") {
+    return methodDefinitionDeclaredName(node);
+  }
+  if (node.type === "function_declaration" || node.type === "class_declaration") {
+    const n = node.childForFieldName("name");
+    return n ? n.text : null;
+  }
+  return null;
 }

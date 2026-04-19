@@ -9,8 +9,9 @@ import type Parser from "tree-sitter";
 
 import { fetchBlobText } from "./blobs.js";
 import { parseTypeScriptSource } from "./parser.js";
+import { canonicalizeSourceForSnapshot } from "./snapshot.js";
 import type { LogicalUnit, WorkspaceSnapshot } from "./types.js";
-import { declaredNameFromUnitSource } from "./units.js";
+import { declaredNameFromTierOneNode, declaredNameFromUnitSource } from "./units.js";
 
 export type SearchCriteriaKind = "function" | "method" | "class" | "reference" | "import";
 
@@ -69,9 +70,9 @@ async function unitText(unit: LogicalUnit, snapshotRootPath?: string): Promise<s
 
 type TsTree = ReturnType<typeof parseTypeScriptSource>;
 
-function methodDefinitionNodeAt(tree: TsTree, startByte: number): Parser.SyntaxNode | null {
+function syntaxNodeAt(tree: TsTree, startByte: number, nodeType: string): Parser.SyntaxNode | null {
   function walk(n: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    if (n.type === "method_definition" && n.startIndex === startByte) return n;
+    if (n.type === nodeType && n.startIndex === startByte) return n;
     for (let i = 0; i < n.namedChildCount; i++) {
       const c = n.namedChild(i);
       if (c) {
@@ -85,13 +86,13 @@ function methodDefinitionNodeAt(tree: TsTree, startByte: number): Parser.SyntaxN
 }
 
 function enclosingClassNameForMethod(tree: TsTree, methodStartByte: number): string | null {
-  const node = methodDefinitionNodeAt(tree, methodStartByte);
+  const node = syntaxNodeAt(tree, methodStartByte, "method_definition");
   if (!node) return null;
   let p: Parser.SyntaxNode | null = node.parent;
   while (p) {
     if (p.type === "class_declaration") {
       const name = p.childForFieldName("name");
-      if (name?.type === "identifier") return name.text;
+      if (name?.type === "identifier" || name?.type === "type_identifier") return name.text;
       return null;
     }
     p = p.parent;
@@ -166,7 +167,8 @@ export async function searchUnits(
     if (hit) return hit;
     try {
       const abs = join(snapshotRootPath, filePath);
-      const src = await readFile(abs, "utf8");
+      const raw = await readFile(abs, "utf8");
+      const src = canonicalizeSourceForSnapshot(raw);
       const tree = parseTypeScriptSource(src);
       fileTrees.set(filePath, tree);
       return tree;
@@ -197,7 +199,15 @@ export async function searchUnits(
       continue;
     }
 
-    const declName = declaredNameFromUnitSource(text);
+    let declName: string | null = null;
+    if (snapshotRootPath) {
+      const tree = await treeForFile(unit.file_path);
+      if (tree) {
+        const node = syntaxNodeAt(tree, unit.start_byte, unit.kind);
+        if (node) declName = declaredNameFromTierOneNode(node);
+      }
+    }
+    if (declName === null) declName = declaredNameFromUnitSource(text);
     if (criteria.name !== undefined && criteria.name !== declName) continue;
 
     if (logical === "class") {
