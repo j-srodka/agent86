@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { declaredNameFromUnitSource } from "ts-adapter";
-import type { LogicalUnit } from "ts-adapter";
+import type { WorkspaceSnapshot } from "ts-adapter";
 
 import { wireAgent86Tools } from "@agent86/mcp-server";
 
@@ -42,7 +42,7 @@ describe("search_units MCP golden", () => {
         arguments: { root_path: dir },
       });
       expect(mat.isError).not.toBe(true);
-      const snap = firstTextJson(mat) as { units: LogicalUnit[] };
+      const snap = firstTextJson(mat) as WorkspaceSnapshot;
 
       const expected = snap.units.find((u) => {
         if (!u.file_path.endsWith("search_units_golden.ts")) return false;
