@@ -23,7 +23,10 @@ import {
   Agent86VersionSkewError,
 } from "@agent86/sdk";
 
-const transport = new Agent86JsonRpcTransport(/* { endpoint } optional */);
+// Constructor resolves `endpoint` immediately; it throws if you omit it and `AGENT86_MCP_ENDPOINT` is unset.
+const transport = new Agent86JsonRpcTransport({
+  endpoint: process.env.AGENT86_MCP_ENDPOINT ?? "http://127.0.0.1:3000/mcp",
+});
 const sdk = new Agent86Sdk({ transport });
 
 const root_path = "/absolute/path/to/workspace";
@@ -33,10 +36,17 @@ const root_path = "/absolute/path/to/workspace";
 const snapshot_id = /* from materialize_snapshot */;
 
 // 2. Find units with structured filters.
-const methods = await sdk.search(
-  { kind: "method", name: "authenticate", enclosing_class: "UserService" },
-  { root_path, snapshot_id },
-);
+let methods;
+try {
+  methods = await sdk.search(
+    { kind: "method", name: "authenticate", enclosing_class: "UserService" },
+    { root_path, snapshot_id },
+  );
+} catch (e) {
+  if (!(e instanceof Agent86VersionSkewError)) throw e;
+  // Host missing `search_units` or legacy payload — deploy v3 `packages/mcp-server` or a compatible HTTP gateway.
+  throw e;
+}
 
 // 3. Build a batch of ops. Pass source_snapshot_id to enable SDK-side
 //    snapshot coherence checks (recommended; opt-in for backward compat).
