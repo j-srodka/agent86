@@ -30,6 +30,10 @@ Use the path to **built** `dist/index.js` from your clone; adjust `args` to an a
 - **`.tsx` files:** Still **not** parsed as TypeScript; paths are recorded in **`skipped_tsx_paths`** on the snapshot (same as `ts-adapter` alone).
 - **`.jsx` files:** Not parsed as plain JavaScript; paths are recorded in **`skipped_jsx_paths`** on the combined snapshot (from the js-adapter leg).
 
+## Trusted workspace
+
+Treat **`root_path` as a trusted directory** (same trust model as a local compiler or formatter). The server reads source files and, on successful **`apply_batch`**, may **write** changes under that tree. **`snapshot_id`** values passed to tools must be **64-character lowercase hex** digests returned by **`materialize_snapshot`**; arbitrary strings are rejected at validation time. Cached snapshots under **`<root_path>/.agent86/snapshots/`** are validated structurally before use; **malformed or stale cache files** are treated like a cache miss — **re-run `materialize_snapshot`** to rebuild.
+
 ## Scoping and exclusions
 
 The MCP server snapshots **all** `.ts`, `.py`, `.js`, `.mjs`, and `.cjs` files found under `root_path`, including subdirectories not tracked by git (e.g. benchmark caches, git worktrees, build outputs). It does **not** currently read `.gitignore` or apply any exclusion list.
