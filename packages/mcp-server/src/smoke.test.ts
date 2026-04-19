@@ -167,6 +167,55 @@ describe("mcp-server smoke", () => {
     });
   });
 
+  it("search_units rejects snapshot_id that is not 64-char lowercase hex", async () => {
+    await withSmokeClient(async (client, root) => {
+      const res = await client.callTool({
+        name: "search_units",
+        arguments: {
+          root_path: root,
+          snapshot_id: `${"0".repeat(63)}G`,
+          criteria: { kind: "function", name: "alpha" },
+        },
+      });
+      expect(res.isError).toBe(true);
+      const text = (res as { content?: Array<{ type?: string; text?: string }> }).content?.find(
+        (c) => c.type === "text" && c.text !== undefined,
+      )?.text;
+      expect(text).toBeDefined();
+      try {
+        const err = JSON.parse(text!) as { code?: string };
+        expect(err.code).toBe("lang.agent86.invalid_tool_input");
+      } catch {
+        // MCP JSON-RPC layer may reject invalid params before the handler (plain-text error).
+        expect(text!.toLowerCase()).toMatch(/invalid|error|-32602/);
+      }
+    });
+  });
+
+  it("search_units with corrupt cache JSON yields snapshot_cache_miss", async () => {
+    await withSmokeClient(async (client, root) => {
+      const mat = await client.callTool({
+        name: "materialize_snapshot",
+        arguments: { root_path: root },
+      });
+      expect(mat.isError).not.toBe(true);
+      const snap = firstTextJson(mat) as CombinedWorkspaceSnapshot;
+      const cachePath = join(root, ".agent86", "snapshots", `${snap.snapshot_id}.json`);
+      await writeFile(cachePath, "{}", "utf8");
+      const res = await client.callTool({
+        name: "search_units",
+        arguments: {
+          root_path: root,
+          snapshot_id: snap.snapshot_id,
+          criteria: { kind: "function", name: "alpha" },
+        },
+      });
+      expect(res.isError).toBe(true);
+      const err = firstTextJson(res) as { code?: string };
+      expect(err.code).toBe("lang.agent86.snapshot_cache_miss");
+    });
+  });
+
   it("build_workspace_summary includes grammar_digests and manifest_url from ts path", async () => {
     await withSmokeClient(async (client, root) => {
       const res = await client.callTool({

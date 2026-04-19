@@ -996,6 +996,15 @@ Recent community work (e.g. **structured AST / edit-operator** research with ben
 
 **Error class evolution is additive, not breaking.** New diagnostic fields on **`Agent86TransportError`** (and any future SDK error classes) are added as **public mutable instance fields**, not as new constructor parameters or options-object discriminators. This preserves the **positional signature** `new Agent86TransportError(message, detail?)` for existing callers and prevents **silent `detail` loss** when raw RPC error objects are passed in the legacy positional form.
 
+### Snapshot cache validation (MCP)
+
+**Date:** 2026-04-19
+
+- **`snapshot_id` wire values:** Must match **64-character lowercase hex** (SHA-256 digest strings produced by `materialize_snapshot` / adapter `computeSnapshotId`). Rejects path segments, traversal, and uppercase hex at the **Zod** tool boundary.
+- **Read path:** `readSnapshotCache` refuses invalid ids **before** `fs` access; parsed JSON must satisfy **`isCombinedWorkspaceSnapshot`** (workspace shape plus `grammar_digests` / `skipped_jsx_paths`) and **`parsed.snapshot_id` must equal** the requested id. Failures return **`null`** (tools surface **`lang.agent86.snapshot_cache_miss`** — same as a missing file).
+- **Write path:** `writeSnapshotCache` refuses to persist if **`snapshot.snapshot_id`** is not valid hex (defensive; materialization always emits valid ids).
+- **Rationale:** Close traversal and type-confusion gaps on cache files without changing normative **`ValidationReport`** codes for apply failures.
+
 ### Explicit non-goals (this session)
 
 - **No `execute_program`**, no **V8 isolate**, no **`isolated-vm`**, no **eval** of agent code in the MCP server.
